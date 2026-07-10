@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #fafaf7;
+  --color-ink: #1c1917;
+  --color-ink-soft: #57534e;
+  --color-line: #e7e5e0;
+  --color-kiwi-50: #f4f9e8;
+  --color-kiwi-100: #e6f2cc;
+  --color-kiwi-200: #cce69b;
+  --color-kiwi-300: #aed162;
+  --color-kiwi-400: #8fb83a;
+  --color-kiwi-500: #6f9c1f;
+  --color-kiwi-600: #567c14;
+  --color-kiwi-700: #445f14;
+  --color-kiwi-800: #384c16;
+  --color-kiwi-900: #304016;
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-body: var(--font-public-sans), system-ui, sans-serif;
+}
+
+html {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* Rendered markdown (lessons, chat, cards) */
+.prose-kiwi {
+  line-height: 1.65;
+  font-size: 0.95rem;
+}
+.prose-kiwi h1,
+.prose-kiwi h2,
+.prose-kiwi h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  margin-top: 1.4em;
+  margin-bottom: 0.5em;
+  line-height: 1.25;
+}
+.prose-kiwi h1 { font-size: 1.5rem; }
+.prose-kiwi h2 { font-size: 1.25rem; }
+.prose-kiwi h3 { font-size: 1.1rem; }
+.prose-kiwi p { margin: 0.6em 0; }
+.prose-kiwi ul, .prose-kiwi ol { margin: 0.6em 0; padding-left: 1.4em; }
+.prose-kiwi ul { list-style: disc; }
+.prose-kiwi ol { list-style: decimal; }
+.prose-kiwi li { margin: 0.25em 0; }
+.prose-kiwi strong { font-weight: 650; }
+.prose-kiwi a { color: var(--color-kiwi-600); text-decoration: underline; }
+.prose-kiwi blockquote {
+  border-left: 3px solid var(--color-kiwi-300);
+  padding-left: 0.9em;
+  color: var(--color-ink-soft);
+  margin: 0.8em 0;
+}
+.prose-kiwi code {
+  background: #f1f0ec;
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.85em;
+}
+.prose-kiwi pre {
+  background: #23211d;
+  color: #f5f4f0;
+  border-radius: 10px;
+  padding: 0.9em 1.1em;
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+.prose-kiwi pre code { background: transparent; padding: 0; color: inherit; }
+.prose-kiwi table { border-collapse: collapse; margin: 0.8em 0; width: 100%; }
+.prose-kiwi th, .prose-kiwi td {
+  border: 1px solid var(--color-line);
+  padding: 0.4em 0.7em;
+  text-align: left;
+}
+.prose-kiwi th { background: #f4f3ef; }
+.prose-kiwi .katex-display { overflow-x: auto; padding: 0.2em 0; }
+
+.cite-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.25rem;
+  margin: 0 0.1rem;
+  border-radius: 999px;
+  background: var(--color-kiwi-100);
+  color: var(--color-kiwi-700);
+  font-size: 0.68rem;
+  font-weight: 700;
+  vertical-align: super;
+  line-height: 1;
+  cursor: default;
+}
+
+@keyframes kiwi-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.animate-kiwi-pulse { animation: kiwi-pulse 1.6s ease-in-out infinite; }
