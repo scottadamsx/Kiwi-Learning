@@ -92,7 +92,7 @@ export default function Workspace({ notebookId }: { notebookId: string }) {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-6">
+    <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-8">
       <header className="mb-5 flex flex-wrap items-center gap-4">
         <Link
           href="/"
@@ -123,15 +123,15 @@ export default function Workspace({ notebookId }: { notebookId: string }) {
         )}
       </header>
 
-      <nav className="mb-6 flex flex-wrap gap-1 border-b border-line">
+      <nav className="mb-6 flex w-fit max-w-full flex-wrap gap-1 rounded-xl border border-line bg-white p-1">
         {TABS.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`-mb-px rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium transition ${
+            className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition ${
               tab === t
-                ? "border-kiwi-600 text-kiwi-700"
-                : "border-transparent text-ink-soft hover:text-ink"
+                ? "bg-kiwi-100 text-kiwi-800"
+                : "text-ink-soft hover:bg-stone-100 hover:text-ink"
             }`}
           >
             {t}

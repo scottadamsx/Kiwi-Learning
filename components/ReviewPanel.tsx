@@ -60,6 +60,20 @@ export default function ReviewPanel({
     setQueue((q) => (q ? q.slice(1) : q));
   }
 
+  async function excludeCard() {
+    if (!queue || queue.length === 0 || busy) return;
+    setBusy(true);
+    const card = queue[0];
+    await fetch(`/api/notebooks/${notebookId}/exclude`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "card", ref_id: card.id }),
+    });
+    setBusy(false);
+    setFlipped(false);
+    setQueue((q) => (q ? q.slice(1) : q));
+  }
+
   useEffect(() => {
     if (queue && queue.length === 0 && done > 0) onSessionEnd();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -121,6 +135,17 @@ export default function ReviewPanel({
           <RateButton label="Easy" sub="instantly" color="bg-sky-600 hover:bg-sky-700" onClick={() => rate(4)} disabled={busy} />
         </div>
       )}
+
+      <div className="mt-3 text-center">
+        <button
+          onClick={excludeCard}
+          disabled={busy}
+          className="text-xs text-ink-soft underline decoration-dotted hover:text-red-600 disabled:opacity-50"
+          title="Removes this card and keeps it out of future rebuilds"
+        >
+          🚫 Not relevant to my course
+        </button>
+      </div>
     </div>
   );
 }

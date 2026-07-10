@@ -51,6 +51,7 @@ export interface Section {
   position: number;
   mastery: number; // BKT P(L)
   last_activity: string | null;
+  excluded: number; // 1 = learner marked "not part of my course"
 }
 
 // Prerequisite edge: from_section should be learned before to_section.

@@ -59,7 +59,7 @@ export function computeReadiness(notebookId: string): Readiness {
     .all(notebookId) as { id: string; name: string }[];
   const sections = db
     .prepare(
-      "SELECT id, module_id, name, importance, mastery, last_activity FROM sections WHERE notebook_id = ? ORDER BY position"
+      "SELECT id, module_id, name, importance, mastery, last_activity FROM sections WHERE notebook_id = ? AND excluded = 0 ORDER BY position"
     )
     .all(notebookId) as {
     id: string;
@@ -96,7 +96,10 @@ export function computeReadiness(notebookId: string): Readiness {
 
   const dueCards = (
     db
-      .prepare("SELECT COUNT(*) AS n FROM cards WHERE notebook_id = ? AND due <= ?")
+      .prepare(
+        `SELECT COUNT(*) AS n FROM cards c JOIN sections s ON s.id = c.section_id
+         WHERE c.notebook_id = ? AND c.due <= ? AND s.excluded = 0`
+      )
       .get(notebookId, new Date().toISOString()) as { n: number }
   ).n;
 

@@ -117,6 +117,14 @@ function init(): Database.Database {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS exclusions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      notebook_id TEXT NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      ref_text TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_exclusions_notebook ON exclusions(notebook_id, kind);
     CREATE TABLE IF NOT EXISTS chat_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       notebook_id TEXT NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE,
@@ -126,6 +134,12 @@ function init(): Database.Database {
       ts TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  // Additive migrations for databases created before these columns existed.
+  try {
+    db.exec("ALTER TABLE sections ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0");
+  } catch {
+    // column already exists
+  }
   return db;
 }
 

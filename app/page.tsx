@@ -55,7 +55,7 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
+    <main className="mx-auto max-w-6xl px-6 py-8">
       <header className="mb-10">
         <h1 className="font-display text-4xl font-semibold tracking-tight">Your notebooks</h1>
         <p className="mt-3 max-w-xl text-ink-soft">
@@ -67,11 +67,13 @@ export default function Home() {
 
       {health && !health.has_credentials && (
         <div className="mb-8 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-          <strong>No Anthropic credentials found.</strong> Copy{" "}
-          <code className="rounded bg-amber-100 px-1">.env.local.example</code> to{" "}
-          <code className="rounded bg-amber-100 px-1">.env.local</code>, add your{" "}
-          <code className="rounded bg-amber-100 px-1">ANTHROPIC_API_KEY</code>, and restart the dev
-          server. Uploading works without it; generation and chat need it.
+          <strong>Not connected to Anthropic.</strong> Log into Claude Code (run{" "}
+          <code className="rounded bg-amber-100 px-1">claude</code> in a terminal, then{" "}
+          <code className="rounded bg-amber-100 px-1">/login</code>) or set it up on the{" "}
+          <Link href="/connectors" className="font-semibold underline">
+            Connectors
+          </Link>{" "}
+          page. Uploading works without it; generation and chat need it.
         </div>
       )}
 
@@ -92,7 +94,7 @@ export default function Home() {
         </button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {notebooks.map((nb) => (
           <div
             key={nb.id}

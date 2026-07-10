@@ -4,6 +4,7 @@ import { buildOutline } from "./outline";
 import { chunksForSection } from "./retrieval";
 import { newCardState, serializeCard } from "./fsrs";
 import { weakestSections } from "./mastery";
+import { exclusionPromptBlock, listExclusions, matchesExclusion } from "./exclusions";
 import type { McqPayload, OpenPayload, QuizItem, Section } from "./types";
 
 // Content generation. All of it is grounded: retrieve the relevant source
@@ -47,8 +48,10 @@ const CARDS_SCHEMA = {
 
 export async function generateCardsForSections(notebookId: string, sections: Section[]) {
   const db = getDb();
+  const excludedCards = listExclusions(notebookId, "card");
+  const active = sections.filter((s) => !s.excluded);
   const batches: Section[][] = [];
-  for (let i = 0; i < sections.length; i += 6) batches.push(sections.slice(i, i + 6));
+  for (let i = 0; i < active.length; i += 6) batches.push(active.slice(i, i + 6));
 
   for (const batch of batches) {
     const sectionBlocks = batch
@@ -69,7 +72,7 @@ Rules:
 - Ground every card in the section's source material.
 - Use Markdown; use $...$ LaTeX for math if the material has any.
 - Set section_name to the exact section name shown.
-
+${exclusionPromptBlock(excludedCards, "flashcards")}
 ${sectionBlocks}`,
       schema: CARDS_SCHEMA as unknown as Record<string, unknown>,
       maxTokens: 16000,
@@ -84,6 +87,8 @@ ${sectionBlocks}`,
       for (const c of result.cards ?? []) {
         const sectionId = byName.get(c.section_name.toLowerCase());
         if (!sectionId || !c.front || !c.back) continue;
+        // Safety net: drop regenerated near-duplicates of rejected cards.
+        if (matchesExclusion(c.front, excludedCards)) continue;
         const state = newCardState(now);
         insert.run(
           uid("card"),
@@ -261,7 +266,7 @@ Produce:
 - ONE long-answer question on the single weakest section, requiring explanation or synthesis. Set options [], answer_index -1, explanation "". Provide a model reference_answer and 3-5 key_ideas.
 
 Use $...$ LaTeX for math. Set section_name to the exact section name shown.
-
+${exclusionPromptBlock(listExclusions(notebookId, "quiz"), "quiz questions")}
 ${sectionBlocks}`,
     schema: QUIZ_SCHEMA as unknown as Record<string, unknown>,
     maxTokens: 12000,
@@ -272,10 +277,12 @@ ${sectionBlocks}`,
     "INSERT INTO quiz_items (id, notebook_id, section_id, type, payload) VALUES (?, ?, ?, ?, ?)"
   );
   const items: QuizItem[] = [];
+  const excludedQuiz = listExclusions(notebookId, "quiz");
   db.transaction(() => {
     for (const it of result.items ?? []) {
       const sectionId = byName.get(it.section_name.toLowerCase());
       if (!sectionId || !it.question) continue;
+      if (matchesExclusion(it.question, excludedQuiz)) continue;
       let payload: McqPayload | OpenPayload;
       if (it.type === "mcq") {
         if (!it.options || it.options.length < 2 || it.answer_index < 0) continue;

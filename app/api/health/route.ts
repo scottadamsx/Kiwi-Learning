@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
-import { hasCredentials, MODEL } from "@/lib/anthropic";
+import { apiCredsAvailable, claudeCliPath, MODEL, provider } from "@/lib/anthropic";
 
 export async function GET() {
-  return NextResponse.json({ has_credentials: hasCredentials(), model: MODEL });
+  const p = provider();
+  return NextResponse.json({
+    provider: p,
+    has_credentials: p !== "none",
+    api_key: apiCredsAvailable(),
+    claude_cli: !!claudeCliPath(),
+    model: p === "claude-code" && !process.env.KIWI_MODEL ? "your Claude Code default" : MODEL,
+  });
 }

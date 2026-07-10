@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import PageShell from "@/components/PageShell";
 
 export default function SettingsPage() {
-  const [health, setHealth] = useState<{ has_credentials: boolean; model: string } | null>(null);
+  const [health, setHealth] = useState<{
+    provider: "api" | "claude-code" | "none";
+    model: string;
+  } | null>(null);
 
   useEffect(() => {
     fetch("/api/health")
@@ -16,27 +19,28 @@ export default function SettingsPage() {
   return (
     <PageShell title="Settings">
       <div className="space-y-4">
-        <SettingCard title="Anthropic API">
+        <SettingCard title="Anthropic connection">
           {health === null ? (
             <p className="animate-kiwi-pulse text-sm text-ink-soft">Checking…</p>
-          ) : health.has_credentials ? (
+          ) : health.provider === "claude-code" ? (
             <p className="text-sm">
               <span className="mr-2 inline-block h-2 w-2 rounded-full bg-kiwi-500" />
-              Credentials found. All generation, grading, and chat features are live.
+              Using your <strong>Claude Code login</strong> (subscription) — no API key needed.
+              Manage it on the <a href="/connectors" className="text-kiwi-700 underline">Connectors</a> page.
+            </p>
+          ) : health.provider === "api" ? (
+            <p className="text-sm">
+              <span className="mr-2 inline-block h-2 w-2 rounded-full bg-kiwi-500" />
+              Using your <strong>ANTHROPIC_API_KEY</strong>. Remove it from{" "}
+              <code className="rounded bg-stone-100 px-1">.env.local</code> to fall back to your
+              Claude Code login instead.
             </p>
           ) : (
-            <div className="text-sm">
-              <p>
-                <span className="mr-2 inline-block h-2 w-2 rounded-full bg-red-500" />
-                No credentials found.
-              </p>
-              <p className="mt-2 text-ink-soft">
-                Copy <code className="rounded bg-stone-100 px-1">.env.local.example</code> to{" "}
-                <code className="rounded bg-stone-100 px-1">.env.local</code>, add your{" "}
-                <code className="rounded bg-stone-100 px-1">ANTHROPIC_API_KEY</code> (from
-                platform.claude.com), and restart the server.
-              </p>
-            </div>
+            <p className="text-sm">
+              <span className="mr-2 inline-block h-2 w-2 rounded-full bg-red-500" />
+              Not connected — set it up on the{" "}
+              <a href="/connectors" className="text-kiwi-700 underline">Connectors</a> page.
+            </p>
           )}
         </SettingCard>
 
@@ -44,7 +48,10 @@ export default function SettingsPage() {
           <p className="text-sm">
             Currently <code className="rounded bg-stone-100 px-1">{health?.model ?? "…"}</code>.
             Override with the <code className="rounded bg-stone-100 px-1">KIWI_MODEL</code>{" "}
-            environment variable.
+            environment variable
+            {health?.provider === "claude-code" &&
+              " (otherwise Kiwi uses whatever model your Claude Code is set to)"}
+            .
           </p>
         </SettingCard>
 

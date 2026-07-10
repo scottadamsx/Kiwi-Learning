@@ -1,5 +1,6 @@
 import { getDb, uid } from "./db";
 import { generateJson } from "./anthropic";
+import { exclusionPromptBlock, listExclusions, matchesExclusion } from "./exclusions";
 import type { Chunk } from "./types";
 
 // The concept-extraction pass: read the uploads and produce the structured
@@ -95,7 +96,7 @@ Rules:
 - importance reflects how much the section should count toward exam readiness: critical for load-bearing ideas, moderate for standard content, minor for peripheral detail.
 - prerequisites lists the exact names of OTHER sections (from this same outline) a student should understand first. Use [] when there are none. Only include real conceptual dependencies.
 - Order modules and sections in the sequence a student should learn them.
-
+${exclusionPromptBlock(listExclusions(notebookId, "section"), "topics/sections")}
 ${numbered.join("\n\n")}`,
     schema: OUTLINE_SCHEMA as unknown as Record<string, unknown>,
     maxTokens: 16000,
@@ -117,6 +118,8 @@ ${numbered.join("\n\n")}`,
   const insertEdge = db.prepare(
     "INSERT OR IGNORE INTO section_edges (notebook_id, from_section, to_section) VALUES (?, ?, ?)"
   );
+
+  const excludedSections = listExclusions(notebookId, "section");
 
   db.transaction(() => {
     // Rebuild the outline from scratch on reprocess.
@@ -140,6 +143,10 @@ ${numbered.join("\n\n")}`,
           IMPORTANCE[s.importance] ?? 2,
           si
         );
+        // A previously-rejected topic that reappears stays excluded.
+        if (matchesExclusion(s.name, excludedSections)) {
+          db.prepare("UPDATE sections SET excluded = 1 WHERE id = ?").run(sectionId);
+        }
         idByName.set(s.name.toLowerCase(), sectionId);
         for (const n of s.chunk_numbers ?? []) {
           const chunk = included[n - 1];

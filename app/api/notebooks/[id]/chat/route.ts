@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { getClient, MODEL } from "@/lib/anthropic";
+import { getClient, MODEL, provider, generateText } from "@/lib/anthropic";
 import { searchChunks, formatSources } from "@/lib/retrieval";
 
 // Grounded chat over the notebook's uploads — the NotebookLM core.
@@ -53,21 +53,56 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     message
   );
 
+  const systemPrompt = `You are the study assistant inside "${notebook.name}", answering ONLY from the learner's uploaded sources below. Ground every factual claim in the sources and cite inline with bracketed source numbers like [1] or [2][3] immediately after the claim. If the sources don't contain the answer, say so plainly rather than guessing — you may note what the sources DO cover. Use Markdown; use $...$ LaTeX for math. Be concise and direct.
+
+Sources for this question:
+${block}`;
+
+  const activeProvider = provider();
+  const encoder = new TextEncoder();
+
+  // Claude Code CLI backend is single-shot: answer arrives whole, then is sent
+  // through the same wire format the client already understands.
+  if (activeProvider !== "api") {
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(encoder.encode(JSON.stringify({ sources }) + MARKER));
+        let full = "";
+        try {
+          const transcript = history
+            .map((h) => `${h.role === "user" ? "Student" : "Assistant"}: ${h.content}`)
+            .join("\n\n");
+          full = await generateText({
+            system: systemPrompt,
+            prompt: `${transcript ? `Conversation so far:\n${transcript}\n\n` : ""}Student: ${message}`,
+          });
+          controller.enqueue(encoder.encode(full));
+        } catch (err) {
+          full = `_${err instanceof Error ? err.message : "Something went wrong."}_`;
+          controller.enqueue(encoder.encode(full));
+        }
+        db.prepare(
+          "INSERT INTO chat_messages (notebook_id, role, content, sources) VALUES (?, 'assistant', ?, ?)"
+        ).run(id, full, JSON.stringify(sources));
+        controller.close();
+      },
+    });
+    return new Response(body, {
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-cache" },
+    });
+  }
+
   const client = getClient();
   const stream = client.messages.stream({
     model: MODEL,
     max_tokens: 4000,
-    system: `You are the study assistant inside "${notebook.name}", answering ONLY from the learner's uploaded sources below. Ground every factual claim in the sources and cite inline with bracketed source numbers like [1] or [2][3] immediately after the claim. If the sources don't contain the answer, say so plainly rather than guessing — you may note what the sources DO cover. Use Markdown; use $...$ LaTeX for math. Be concise and direct.
-
-Sources for this question:
-${block}`,
+    system: systemPrompt,
     messages: [
       ...history.map((h) => ({ role: h.role, content: h.content })),
       { role: "user" as const, content: message },
     ],
   });
 
-  const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       controller.enqueue(encoder.encode(JSON.stringify({ sources }) + MARKER));

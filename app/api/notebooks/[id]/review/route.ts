@@ -15,12 +15,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     .prepare(
       `SELECT c.id, c.section_id, c.front, c.back, c.due, s.name AS section_name
        FROM cards c JOIN sections s ON s.id = c.section_id
-       WHERE c.notebook_id = ? AND c.due <= ? ORDER BY c.due LIMIT ?`
+       WHERE c.notebook_id = ? AND c.due <= ? AND s.excluded = 0 ORDER BY c.due LIMIT ?`
     )
     .all(id, new Date().toISOString(), limit);
   const total = (
     db
-      .prepare("SELECT COUNT(*) AS n FROM cards WHERE notebook_id = ? AND due <= ?")
+      .prepare(
+        `SELECT COUNT(*) AS n FROM cards c JOIN sections s ON s.id = c.section_id
+         WHERE c.notebook_id = ? AND c.due <= ? AND s.excluded = 0`
+      )
       .get(id, new Date().toISOString()) as { n: number }
   ).n;
   return NextResponse.json({ cards, total_due: total });

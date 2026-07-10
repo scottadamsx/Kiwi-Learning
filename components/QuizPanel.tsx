@@ -87,6 +87,21 @@ export default function QuizPanel({
     setResult(null);
   }
 
+  async function excludeItem() {
+    if (!items || result || grading) return;
+    const item = items[idx];
+    await fetch(`/api/notebooks/${notebookId}/exclude`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "quiz", ref_id: item.id }),
+    });
+    // Drop the item from the session without grading or mastery impact.
+    setItems((its) => (its ? its.filter((_, i) => i !== idx) : its));
+    setSelected(null);
+    setText("");
+    setResult(null);
+  }
+
   if (!items) {
     return (
       <div className="mx-auto max-w-md rounded-2xl border border-line bg-white p-10 text-center">
@@ -186,19 +201,29 @@ export default function QuizPanel({
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
         {!result ? (
-          <button
-            onClick={submit}
-            disabled={grading || (item.type === "mcq" ? selected === null : !text.trim())}
-            className="mt-5 rounded-xl bg-kiwi-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-kiwi-700 disabled:opacity-40"
-          >
-            {grading ? (
-              <span className="animate-kiwi-pulse">
-                {item.type === "mcq" ? "Checking…" : "Grading on understanding…"}
-              </span>
-            ) : (
-              "Submit"
-            )}
-          </button>
+          <div className="mt-5 flex items-center justify-between gap-3">
+            <button
+              onClick={submit}
+              disabled={grading || (item.type === "mcq" ? selected === null : !text.trim())}
+              className="rounded-xl bg-kiwi-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-kiwi-700 disabled:opacity-40"
+            >
+              {grading ? (
+                <span className="animate-kiwi-pulse">
+                  {item.type === "mcq" ? "Checking…" : "Grading on understanding…"}
+                </span>
+              ) : (
+                "Submit"
+              )}
+            </button>
+            <button
+              onClick={excludeItem}
+              disabled={grading}
+              className="text-xs text-ink-soft underline decoration-dotted hover:text-red-600 disabled:opacity-50"
+              title="Skips this question, removes it, and keeps similar ones out of future quizzes"
+            >
+              🚫 Not relevant to my course
+            </button>
+          </div>
         ) : (
           <GradeCard result={result} onNext={next} last={idx === items.length - 1} />
         )}
