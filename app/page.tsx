@@ -67,13 +67,11 @@ export default function Home() {
 
       {health && !health.has_credentials && (
         <div className="mb-8 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-          <strong>Not connected to Anthropic.</strong> Log into Claude Code (run{" "}
-          <code className="rounded bg-amber-100 px-1">claude</code> in a terminal, then{" "}
-          <code className="rounded bg-amber-100 px-1">/login</code>) or set it up on the{" "}
+          <strong>Not connected to Anthropic.</strong> Paste your API key on the{" "}
           <Link href="/connectors" className="font-semibold underline">
             Connectors
           </Link>{" "}
-          page. Uploading works without it; generation and chat need it.
+          page to turn on generation, grading, and chat. Uploading works without it.
         </div>
       )}
 

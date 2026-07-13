@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { Readiness, Section } from "@/lib/types";
 import type { NotebookDetail } from "./Workspace";
 import Markdown from "./Markdown";
@@ -214,7 +214,10 @@ function LessonCheck({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Grading failed");
       setResults((r) => ({ ...r, [itemId]: { correct: data.correct, feedback: data.feedback } }));
-      onAnswered(); // mastery moved — refresh the readiness meter
+      // Mastery moved server-side. We DON'T refresh the parent here — doing so
+      // re-renders the whole lesson (Mermaid/KaTeX reflow) and jumps your
+      // scroll. The readiness meter refreshes when you leave the lesson.
+      onAnswered();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Grading failed");
     } finally {
@@ -348,6 +351,14 @@ function LessonView({
 }) {
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Mastery updates as you answer, but we defer the readiness refresh to when
+  // you leave — refreshing mid-check re-renders the lesson and jumps scroll.
+  const masteryDirty = useRef(false);
+
+  const back = () => {
+    if (masteryDirty.current) onMasteryChange();
+    onBack();
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -370,7 +381,7 @@ function LessonView({
   if (content === null && !error) {
     return (
       <div>
-        <button onClick={onBack} className="mb-4 text-sm text-kiwi-700 hover:underline">
+        <button onClick={back} className="mb-4 text-sm text-kiwi-700 hover:underline">
           ← Back to outline
         </button>
         <p className="mb-4 text-center text-sm text-ink-soft">
@@ -385,7 +396,7 @@ function LessonView({
 
   return (
     <div className="mx-auto max-w-3xl">
-      <button onClick={onBack} className="mb-4 text-sm text-kiwi-700 hover:underline">
+      <button onClick={back} className="mb-4 text-sm text-kiwi-700 hover:underline">
         ← Back to outline
       </button>
       <div className="rounded-2xl border border-line bg-white p-8">
@@ -395,7 +406,7 @@ function LessonView({
           {error ? (
             <p className="text-sm text-red-600">{error}</p>
           ) : (
-            <Markdown content={content!} citations />
+            <LessonBody content={content!} />
           )}
         </div>
       </div>
@@ -404,9 +415,17 @@ function LessonView({
         <LessonCheck
           notebookId={notebookId}
           section={section}
-          onAnswered={onMasteryChange}
+          onAnswered={() => {
+            masteryDirty.current = true;
+          }}
         />
       )}
     </div>
   );
 }
+
+/** Rendered once and frozen — Mermaid/KaTeX are expensive and must never reflow
+ *  mid-session, or the page scroll jumps. */
+const LessonBody = memo(function LessonBody({ content }: { content: string }) {
+  return <Markdown content={content} citations />;
+});

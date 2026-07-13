@@ -13,31 +13,92 @@ interface Health {
   provider: "api" | "claude-code" | "none";
   api_key: boolean;
   claude_cli: boolean;
+  can_login: boolean;
+  serverless: boolean;
   model: string;
 }
 
 function AnthropicCard() {
   const [health, setHealth] = useState<Health | null>(null);
+  const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  useEffect(() => {
+  const refresh = () =>
     fetch("/api/health")
       .then((r) => r.json())
       .then(setHealth)
       .catch(() => {});
+
+  useEffect(() => {
+    refresh();
   }, []);
+
+  async function saveKey() {
+    if (!apiKey.trim() || saving) return;
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/settings/anthropic/key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: apiKey }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMsg({ ok: false, text: data.error ?? "Couldn't save that key" });
+        return;
+      }
+      setApiKey("");
+      setMsg({ ok: true, text: "Connected — you're all set. 🥝" });
+      refresh();
+    } catch {
+      setMsg({ ok: false, text: "Couldn't reach the server." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function disconnect() {
+    await fetch("/api/settings/anthropic/key", { method: "DELETE" });
+    setMsg(null);
+    refresh();
+  }
 
   async function test() {
     setTesting(true);
-    setTestResult(null);
+    setMsg(null);
     try {
       const res = await fetch("/api/settings/anthropic/test", { method: "POST" });
-      setTestResult(await res.json());
+      const data = await res.json();
+      setMsg(data.ok ? { ok: true, text: "✓ Working" } : { ok: false, text: data.error });
     } catch {
-      setTestResult({ ok: false, error: "Test request failed" });
+      setMsg({ ok: false, text: "Test request failed" });
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function loginWithClaudeCode() {
+    setLoggingIn(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/settings/anthropic/login", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setMsg({ ok: false, text: data.error });
+        return;
+      }
+      setMsg({
+        ok: true,
+        text: "Opened Terminal — finish signing in there, then hit Test connection.",
+      });
+    } catch {
+      setMsg({ ok: false, text: "Couldn't open a terminal here." });
+    } finally {
+      setLoggingIn(false);
     }
   }
 
@@ -49,10 +110,8 @@ function AnthropicCard() {
         <div>
           <h2 className="font-display text-lg font-semibold">✳️ Anthropic account</h2>
           <p className="mt-1 text-sm text-ink-soft">
-            Powers all generation, grading, and chat. Kiwi uses your{" "}
-            <strong>Claude Code login</strong> automatically — no API key needed. (If an{" "}
-            <code className="rounded bg-stone-100 px-1">ANTHROPIC_API_KEY</code> is set, it uses
-            that instead.)
+            Powers all generation, grading, and chat. Paste your API key below to connect —
+            that&apos;s it.
           </p>
         </div>
         {health && (
@@ -64,7 +123,7 @@ function AnthropicCard() {
             {health.provider === "claude-code"
               ? "Connected via Claude Code"
               : health.provider === "api"
-                ? "Connected via API key"
+                ? "Connected"
                 : "Not connected"}
           </span>
         )}
@@ -85,35 +144,90 @@ function AnthropicCard() {
             >
               {testing ? "Testing…" : "Test connection"}
             </button>
-            {testResult &&
-              (testResult.ok ? (
-                <span className="text-xs font-semibold text-kiwi-700">✓ Working</span>
-              ) : (
-                <span className="text-xs text-red-600">{testResult.error}</span>
-              ))}
+            {health.provider === "api" && (
+              <button
+                onClick={disconnect}
+                className="rounded-lg border border-line px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+              >
+                Disconnect
+              </button>
+            )}
+            {msg && (
+              <span className={`text-xs ${msg.ok ? "text-kiwi-700" : "text-red-600"}`}>
+                {msg.text}
+              </span>
+            )}
           </div>
         ) : (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-            <p className="font-semibold">Log in to connect:</p>
-            <ol className="mt-1 list-decimal pl-5">
-              <li>
-                Open a terminal and run <code className="rounded bg-amber-100 px-1">claude</code>
-              </li>
-              <li>
-                Type <code className="rounded bg-amber-100 px-1">/login</code> and sign in with
-                your Anthropic account
-              </li>
-              <li>Come back here and hit Test connection</li>
-            </ol>
-            <button
-              onClick={test}
-              disabled={testing}
-              className="mt-3 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
-            >
-              {testing ? "Testing…" : "Test connection"}
-            </button>
-            {testResult && !testResult.ok && (
-              <p className="mt-2 text-xs">{testResult.error}</p>
+          <div className="space-y-3">
+            {/* Primary: paste a key. No terminal. */}
+            <div>
+              <label className="text-xs font-semibold text-ink-soft">Anthropic API key</label>
+              <div className="mt-1 flex gap-2">
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && saveKey()}
+                  placeholder="sk-ant-…"
+                  className="flex-1 rounded-xl border border-line bg-white px-4 py-2.5 font-mono text-sm outline-none focus:border-kiwi-400 focus:ring-2 focus:ring-kiwi-100"
+                />
+                <button
+                  onClick={saveKey}
+                  disabled={saving || !apiKey.trim()}
+                  className="rounded-xl bg-kiwi-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-kiwi-700 disabled:opacity-40"
+                >
+                  {saving ? "Connecting…" : "Connect"}
+                </button>
+              </div>
+              <p className="mt-1.5 text-xs text-ink-soft">
+                Get a key at{" "}
+                <a
+                  href="https://console.anthropic.com/settings/keys"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-kiwi-700 underline"
+                >
+                  console.anthropic.com
+                </a>
+                . Stored only on this machine.
+              </p>
+            </div>
+
+            {/* Secondary, local only: sign in with a Claude Code subscription. */}
+            {health.can_login && (
+              <div className="border-t border-line pt-3">
+                <p className="mb-2 text-xs text-ink-soft">
+                  Have a Claude subscription instead of an API key?
+                </p>
+                <button
+                  onClick={loginWithClaudeCode}
+                  disabled={loggingIn}
+                  className="rounded-xl border border-line px-4 py-2 text-sm font-semibold hover:border-kiwi-300 disabled:opacity-50"
+                >
+                  {loggingIn ? "Opening…" : "Log in with Claude Code"}
+                </button>
+                <button
+                  onClick={test}
+                  disabled={testing}
+                  className="ml-2 rounded-xl border border-line px-4 py-2 text-sm font-semibold text-ink-soft hover:border-kiwi-300 disabled:opacity-50"
+                >
+                  {testing ? "Testing…" : "Test connection"}
+                </button>
+              </div>
+            )}
+
+            {health.serverless && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                This is a cloud deployment, so the Claude Code subscription option isn&apos;t
+                available here — paste an API key above (or set{" "}
+                <code className="rounded bg-amber-100 px-1">ANTHROPIC_API_KEY</code> in your Vercel
+                environment variables).
+              </p>
+            )}
+
+            {msg && (
+              <p className={`text-xs ${msg.ok ? "text-kiwi-700" : "text-red-600"}`}>{msg.text}</p>
             )}
           </div>
         )}

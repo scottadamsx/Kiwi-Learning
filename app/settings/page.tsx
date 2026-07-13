@@ -55,7 +55,7 @@ export default function SettingsPage() {
           ) : (
             <p className="text-sm">
               <span className="mr-2 inline-block h-2 w-2 rounded-full bg-red-500" />
-              Not connected — set it up on the{" "}
+              Not connected — paste your API key on the{" "}
               <a href="/connectors" className="text-kiwi-700 underline">Connectors</a> page.
             </p>
           )}

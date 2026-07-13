@@ -28,13 +28,52 @@ declare global {
   var __kiwiAnthropic: Anthropic | undefined;
 }
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __kiwiAnthropicKey: string | undefined;
+}
+
+/** API key the user pasted into the Connectors page (stored in the settings table). */
+export function getStoredApiKey(): string | null {
+  try {
+    const row = getDb().prepare("SELECT value FROM settings WHERE key = 'anthropic_api_key'").get() as
+      | { value: string }
+      | undefined;
+    return row?.value?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredApiKey(key: string | null) {
+  const db = getDb();
+  if (key && key.trim()) {
+    db.prepare(
+      "INSERT INTO settings (key, value) VALUES ('anthropic_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    ).run(key.trim());
+  } else {
+    db.prepare("DELETE FROM settings WHERE key = 'anthropic_api_key'").run();
+  }
+  globalThis.__kiwiAnthropic = undefined; // rebuild the client with the new key
+}
+
+/** Resolve the API key from (in order): env var, pasted key, ant auth token env. */
+function resolvedApiKey(): string | undefined {
+  return process.env.ANTHROPIC_API_KEY || getStoredApiKey() || undefined;
+}
+
 export function getClient(): Anthropic {
-  if (!globalThis.__kiwiAnthropic) globalThis.__kiwiAnthropic = new Anthropic();
+  const key = resolvedApiKey();
+  if (!globalThis.__kiwiAnthropic || globalThis.__kiwiAnthropicKey !== key) {
+    globalThis.__kiwiAnthropic = key ? new Anthropic({ apiKey: key }) : new Anthropic();
+    globalThis.__kiwiAnthropicKey = key;
+  }
   return globalThis.__kiwiAnthropic;
 }
 
 export function apiCredsAvailable(): boolean {
   if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return true;
+  if (getStoredApiKey()) return true;
   try {
     return fs.existsSync(path.join(os.homedir(), ".config", "anthropic", "credentials"));
   } catch {
@@ -76,6 +115,48 @@ export function provider(): Provider {
   if (apiCredsAvailable()) return "api";
   if (claudeCliPath()) return "claude-code";
   return "none";
+}
+
+/** True when the server runs on a serverless host (Vercel etc.) — no local CLI,
+ *  no terminal, so Claude Code login can't happen here; only an API key works. */
+export function isServerless(): boolean {
+  return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY);
+}
+
+/** Can we pop a terminal and start `claude` login for the user? Local Mac only. */
+export function canLaunchLogin(): boolean {
+  return process.platform === "darwin" && !isServerless() && !!claudeCliPath();
+}
+
+/** Open Terminal.app and start the interactive Claude Code login. */
+export function launchClaudeLogin(): Promise<void> {
+  if (!canLaunchLogin()) {
+    return Promise.reject(
+      new Error(
+        isServerless()
+          ? "This is a cloud deployment — it can't run Claude Code. Set an ANTHROPIC_API_KEY instead."
+          : "Couldn't launch a terminal here. Run `claude` yourself, then use /login."
+      )
+    );
+  }
+  return new Promise((resolve, reject) => {
+    // Bring Terminal to the front and run `claude` (which prompts /login when
+    // signed out). The user completes the OAuth flow in their browser.
+    execFile(
+      "osascript",
+      [
+        "-e",
+        'tell application "Terminal" to activate',
+        "-e",
+        'tell application "Terminal" to do script "claude"',
+      ],
+      { timeout: 15_000 },
+      (err, _stdout, stderr) => {
+        if (err) reject(new Error(stderr.trim() || err.message));
+        else resolve();
+      }
+    );
+  });
 }
 
 /**
