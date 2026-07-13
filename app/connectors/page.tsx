@@ -9,228 +9,192 @@ interface VaultStatus {
   file_count?: number;
 }
 
-interface Health {
-  provider: "api" | "claude-code" | "none";
-  api_key: boolean;
-  claude_cli: boolean;
-  can_login: boolean;
+interface Auth {
+  installed: boolean;
   serverless: boolean;
-  model: string;
+  loggedIn: boolean;
+  email?: string;
+  subscriptionType?: string;
+  orgName?: string;
 }
 
 function AnthropicCard() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [apiKey, setApiKey] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [loggingIn, setLoggingIn] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [auth, setAuth] = useState<Auth | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [url, setUrl] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [finishing, setFinishing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = () =>
-    fetch("/api/health")
+    fetch("/api/auth")
       .then((r) => r.json())
-      .then(setHealth)
+      .then(setAuth)
       .catch(() => {});
 
   useEffect(() => {
     refresh();
   }, []);
 
-  async function saveKey() {
-    if (!apiKey.trim() || saving) return;
-    setSaving(true);
-    setMsg(null);
+  // Step 1 — start the login and get the Claude sign-in link.
+  async function signIn() {
+    setStarting(true);
+    setError(null);
     try {
-      const res = await fetch("/api/settings/anthropic/key", {
+      const res = await fetch("/api/auth/login", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Couldn't start sign-in");
+        return;
+      }
+      setUrl(data.url);
+      window.open(data.url, "_blank", "noopener");
+    } catch {
+      setError("Couldn't reach the server.");
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  // Step 2 — hand the code from the browser back to Claude.
+  async function finish() {
+    if (!code.trim() || finishing) return;
+    setFinishing(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: apiKey }),
+        body: JSON.stringify({ code }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setMsg({ ok: false, text: data.error ?? "Couldn't save that key" });
+        setError(data.error ?? "That code didn't work");
         return;
       }
-      setApiKey("");
-      setMsg({ ok: true, text: "Connected — you're all set. 🥝" });
+      setUrl(null);
+      setCode("");
       refresh();
     } catch {
-      setMsg({ ok: false, text: "Couldn't reach the server." });
+      setError("Couldn't reach the server.");
     } finally {
-      setSaving(false);
+      setFinishing(false);
     }
   }
 
-  async function disconnect() {
-    await fetch("/api/settings/anthropic/key", { method: "DELETE" });
-    setMsg(null);
+  async function signOut() {
+    await fetch("/api/auth", { method: "DELETE" });
+    setUrl(null);
+    setCode("");
     refresh();
   }
-
-  async function test() {
-    setTesting(true);
-    setMsg(null);
-    try {
-      const res = await fetch("/api/settings/anthropic/test", { method: "POST" });
-      const data = await res.json();
-      setMsg(data.ok ? { ok: true, text: "✓ Working" } : { ok: false, text: data.error });
-    } catch {
-      setMsg({ ok: false, text: "Test request failed" });
-    } finally {
-      setTesting(false);
-    }
-  }
-
-  async function loginWithClaudeCode() {
-    setLoggingIn(true);
-    setMsg(null);
-    try {
-      const res = await fetch("/api/settings/anthropic/login", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) {
-        setMsg({ ok: false, text: data.error });
-        return;
-      }
-      setMsg({
-        ok: true,
-        text: "Opened Terminal — finish signing in there, then hit Test connection.",
-      });
-    } catch {
-      setMsg({ ok: false, text: "Couldn't open a terminal here." });
-    } finally {
-      setLoggingIn(false);
-    }
-  }
-
-  const connected = health && health.provider !== "none";
 
   return (
     <section className="mb-4 rounded-2xl border border-line bg-white p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="font-display text-lg font-semibold">✳️ Anthropic account</h2>
+          <h2 className="font-display text-lg font-semibold">✳️ Claude account</h2>
           <p className="mt-1 text-sm text-ink-soft">
-            Powers all generation, grading, and chat. Paste your API key below to connect —
-            that&apos;s it.
+            Kiwi runs on your <strong>Claude subscription</strong> — sign in once and everything
+            (lessons, grading, quizzes, chat, your tutor) just works. No API key, ever.
           </p>
         </div>
-        {health && (
+        {auth && (
           <span
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
-              connected ? "bg-kiwi-100 text-kiwi-700" : "bg-red-100 text-red-700"
+              auth.loggedIn ? "bg-kiwi-100 text-kiwi-700" : "bg-red-100 text-red-700"
             }`}
           >
-            {health.provider === "claude-code"
-              ? "Connected via Claude Code"
-              : health.provider === "api"
-                ? "Connected"
-                : "Not connected"}
+            {auth.loggedIn ? "Signed in" : "Not signed in"}
           </span>
         )}
       </div>
 
       <div className="mt-4 text-sm">
-        {health === null ? (
+        {auth === null ? (
           <p className="animate-kiwi-pulse text-ink-soft">Checking…</p>
-        ) : connected ? (
+        ) : auth.loggedIn ? (
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-ink-soft">
-              Model: <code className="rounded bg-stone-100 px-1">{health.model}</code>
+            <span className="flex items-center gap-2">
+              <span className="inline-block h-2 w-2 rounded-full bg-kiwi-500" />
+              <strong>{auth.email}</strong>
+              {auth.subscriptionType && (
+                <span className="rounded-full bg-kiwi-100 px-2 py-0.5 text-xs font-semibold uppercase text-kiwi-700">
+                  {auth.subscriptionType}
+                </span>
+              )}
             </span>
             <button
-              onClick={test}
-              disabled={testing}
-              className="rounded-lg border border-line px-3 py-1 text-xs font-semibold hover:border-kiwi-300 disabled:opacity-50"
+              onClick={signOut}
+              className="ml-auto rounded-lg border border-line px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
             >
-              {testing ? "Testing…" : "Test connection"}
+              Sign out
             </button>
-            {health.provider === "api" && (
-              <button
-                onClick={disconnect}
-                className="rounded-lg border border-line px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
-              >
-                Disconnect
-              </button>
-            )}
-            {msg && (
-              <span className={`text-xs ${msg.ok ? "text-kiwi-700" : "text-red-600"}`}>
-                {msg.text}
-              </span>
-            )}
+          </div>
+        ) : !auth.installed ? (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            {auth.serverless
+              ? "This is a cloud deployment, so it can't use a Claude subscription. Run Kiwi on your own machine to sign in."
+              : "Claude Code isn't installed on this machine, so Kiwi can't sign you in yet."}
+          </p>
+        ) : !url ? (
+          <div>
+            <button
+              onClick={signIn}
+              disabled={starting}
+              className="rounded-xl bg-kiwi-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-kiwi-700 disabled:opacity-50"
+            >
+              {starting ? "Opening Claude…" : "Sign in with Claude"}
+            </button>
+            <p className="mt-2 text-xs text-ink-soft">
+              Opens Claude in a new tab. Approve access, then paste the code it gives you back
+              here.
+            </p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {/* Primary: paste a key. No terminal. */}
-            <div>
-              <label className="text-xs font-semibold text-ink-soft">Anthropic API key</label>
-              <div className="mt-1 flex gap-2">
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && saveKey()}
-                  placeholder="sk-ant-…"
-                  className="flex-1 rounded-xl border border-line bg-white px-4 py-2.5 font-mono text-sm outline-none focus:border-kiwi-400 focus:ring-2 focus:ring-kiwi-100"
-                />
-                <button
-                  onClick={saveKey}
-                  disabled={saving || !apiKey.trim()}
-                  className="rounded-xl bg-kiwi-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-kiwi-700 disabled:opacity-40"
-                >
-                  {saving ? "Connecting…" : "Connect"}
-                </button>
-              </div>
-              <p className="mt-1.5 text-xs text-ink-soft">
-                Get a key at{" "}
-                <a
-                  href="https://console.anthropic.com/settings/keys"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-kiwi-700 underline"
-                >
-                  console.anthropic.com
+          <div className="rounded-xl border border-kiwi-200 bg-kiwi-50 p-4">
+            <p className="text-sm font-semibold text-kiwi-800">Almost there</p>
+            <ol className="mt-1 list-decimal pl-5 text-sm text-kiwi-900">
+              <li>
+                Approve access in the Claude tab that opened (
+                <a href={url} target="_blank" rel="noreferrer" className="underline">
+                  reopen it
                 </a>
-                . Stored only on this machine.
-              </p>
+                )
+              </li>
+              <li>Copy the code Claude shows you and paste it below</li>
+            </ol>
+            <div className="mt-3 flex gap-2">
+              <input
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && finish()}
+                placeholder="Paste your code here"
+                autoFocus
+                className="flex-1 rounded-xl border border-line bg-white px-4 py-2.5 font-mono text-sm outline-none focus:border-kiwi-400 focus:ring-2 focus:ring-kiwi-100"
+              />
+              <button
+                onClick={finish}
+                disabled={finishing || !code.trim()}
+                className="rounded-xl bg-kiwi-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-kiwi-700 disabled:opacity-40"
+              >
+                {finishing ? "Signing in…" : "Finish"}
+              </button>
             </div>
-
-            {/* Secondary, local only: sign in with a Claude Code subscription. */}
-            {health.can_login && (
-              <div className="border-t border-line pt-3">
-                <p className="mb-2 text-xs text-ink-soft">
-                  Have a Claude subscription instead of an API key?
-                </p>
-                <button
-                  onClick={loginWithClaudeCode}
-                  disabled={loggingIn}
-                  className="rounded-xl border border-line px-4 py-2 text-sm font-semibold hover:border-kiwi-300 disabled:opacity-50"
-                >
-                  {loggingIn ? "Opening…" : "Log in with Claude Code"}
-                </button>
-                <button
-                  onClick={test}
-                  disabled={testing}
-                  className="ml-2 rounded-xl border border-line px-4 py-2 text-sm font-semibold text-ink-soft hover:border-kiwi-300 disabled:opacity-50"
-                >
-                  {testing ? "Testing…" : "Test connection"}
-                </button>
-              </div>
-            )}
-
-            {health.serverless && (
-              <p className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
-                This is a cloud deployment, so the Claude Code subscription option isn&apos;t
-                available here — paste an API key above (or set{" "}
-                <code className="rounded bg-amber-100 px-1">ANTHROPIC_API_KEY</code> in your Vercel
-                environment variables).
-              </p>
-            )}
-
-            {msg && (
-              <p className={`text-xs ${msg.ok ? "text-kiwi-700" : "text-red-600"}`}>{msg.text}</p>
-            )}
+            <button
+              onClick={() => {
+                setUrl(null);
+                setCode("");
+                setError(null);
+              }}
+              className="mt-2 text-xs text-ink-soft underline"
+            >
+              Cancel
+            </button>
           </div>
         )}
+
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
     </section>
   );

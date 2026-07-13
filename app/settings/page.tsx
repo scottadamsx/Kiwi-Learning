@@ -36,27 +36,27 @@ export default function SettingsPage() {
   return (
     <PageShell title="Settings">
       <div className="space-y-4">
-        <SettingCard title="Anthropic connection">
+        <SettingCard title="Claude account">
           {health === null ? (
             <p className="animate-kiwi-pulse text-sm text-ink-soft">Checking…</p>
-          ) : health.provider === "claude-code" ? (
+          ) : health.provider !== "none" ? (
             <p className="text-sm">
               <span className="mr-2 inline-block h-2 w-2 rounded-full bg-kiwi-500" />
-              Using your <strong>Claude Code login</strong> (subscription) — no API key needed.
-              Manage it on the <a href="/connectors" className="text-kiwi-700 underline">Connectors</a> page.
-            </p>
-          ) : health.provider === "api" ? (
-            <p className="text-sm">
-              <span className="mr-2 inline-block h-2 w-2 rounded-full bg-kiwi-500" />
-              Using your <strong>ANTHROPIC_API_KEY</strong>. Remove it from{" "}
-              <code className="rounded bg-stone-100 px-1">.env.local</code> to fall back to your
-              Claude Code login instead.
+              Signed in — Kiwi is running on your <strong>Claude subscription</strong>. Manage it
+              on the{" "}
+              <a href="/connectors" className="text-kiwi-700 underline">
+                Connectors
+              </a>{" "}
+              page.
             </p>
           ) : (
             <p className="text-sm">
               <span className="mr-2 inline-block h-2 w-2 rounded-full bg-red-500" />
-              Not connected — paste your API key on the{" "}
-              <a href="/connectors" className="text-kiwi-700 underline">Connectors</a> page.
+              Not signed in — sign in with Claude on the{" "}
+              <a href="/connectors" className="text-kiwi-700 underline">
+                Connectors
+              </a>{" "}
+              page.
             </p>
           )}
         </SettingCard>

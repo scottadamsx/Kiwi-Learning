@@ -67,11 +67,11 @@ export default function Home() {
 
       {health && !health.has_credentials && (
         <div className="mb-8 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-          <strong>Not connected to Anthropic.</strong> Paste your API key on the{" "}
+          <strong>Not signed in.</strong> Sign in with your Claude subscription on the{" "}
           <Link href="/connectors" className="font-semibold underline">
             Connectors
           </Link>{" "}
-          page to turn on generation, grading, and chat. Uploading works without it.
+          page to turn on lessons, grading, quizzes, and chat. Uploading works without it.
         </div>
       )}
 

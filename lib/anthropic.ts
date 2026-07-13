@@ -33,37 +33,8 @@ declare global {
   var __kiwiAnthropicKey: string | undefined;
 }
 
-/** API key the user pasted into the Connectors page (stored in the settings table). */
-export function getStoredApiKey(): string | null {
-  try {
-    const row = getDb().prepare("SELECT value FROM settings WHERE key = 'anthropic_api_key'").get() as
-      | { value: string }
-      | undefined;
-    return row?.value?.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-export function setStoredApiKey(key: string | null) {
-  const db = getDb();
-  if (key && key.trim()) {
-    db.prepare(
-      "INSERT INTO settings (key, value) VALUES ('anthropic_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-    ).run(key.trim());
-  } else {
-    db.prepare("DELETE FROM settings WHERE key = 'anthropic_api_key'").run();
-  }
-  globalThis.__kiwiAnthropic = undefined; // rebuild the client with the new key
-}
-
-/** Resolve the API key from (in order): env var, pasted key, ant auth token env. */
-function resolvedApiKey(): string | undefined {
-  return process.env.ANTHROPIC_API_KEY || getStoredApiKey() || undefined;
-}
-
 export function getClient(): Anthropic {
-  const key = resolvedApiKey();
+  const key = process.env.ANTHROPIC_API_KEY;
   if (!globalThis.__kiwiAnthropic || globalThis.__kiwiAnthropicKey !== key) {
     globalThis.__kiwiAnthropic = key ? new Anthropic({ apiKey: key }) : new Anthropic();
     globalThis.__kiwiAnthropicKey = key;
@@ -71,9 +42,9 @@ export function getClient(): Anthropic {
   return globalThis.__kiwiAnthropic;
 }
 
+/** Env-var fallback only (cloud/CI). Kiwi never asks a user for an API key. */
 export function apiCredsAvailable(): boolean {
   if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return true;
-  if (getStoredApiKey()) return true;
   try {
     return fs.existsSync(path.join(os.homedir(), ".config", "anthropic", "credentials"));
   } catch {
@@ -108,12 +79,18 @@ export function claudeCliPath(): string | null {
   return null;
 }
 
+/**
+ * Kiwi runs on your Claude subscription — the Claude Code login is the primary
+ * (and only user-facing) way to connect. An ANTHROPIC_API_KEY env var is still
+ * honored as a fallback for cloud/CI deploys where there's no CLI, but it is
+ * never asked for in the UI.
+ */
 export function provider(): Provider {
   const forced = process.env.KIWI_PROVIDER;
   if (forced === "api") return apiCredsAvailable() ? "api" : "none";
   if (forced === "claude-code") return claudeCliPath() ? "claude-code" : "none";
+  if (claudeCliPath()) return "claude-code"; // subscription first
   if (apiCredsAvailable()) return "api";
-  if (claudeCliPath()) return "claude-code";
   return "none";
 }
 
