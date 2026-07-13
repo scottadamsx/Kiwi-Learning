@@ -76,6 +76,9 @@ ${exclusionPromptBlock(excludedCards, "flashcards")}
 ${sectionBlocks}`,
       schema: CARDS_SCHEMA as unknown as Record<string, unknown>,
       maxTokens: 16000,
+      tier: "content",
+      effort: "medium",
+      task: "cards",
     });
 
     const insert = db.prepare(
@@ -176,13 +179,18 @@ Structure (use Markdown headings):
 1. A plain-language explanation of the core idea — build intuition before formality.
 2. One or two worked examples pulled from or built directly on the source material.
 3. Where a visual genuinely helps, include ONE Mermaid diagram in a \`\`\`mermaid code block (flowchart or mindmap).
-4. "Check yourself" — 2 short recall questions (no answers).
+4. A short "Key takeaways" list.
+
+Do NOT write practice questions — the app adds a graded check after the lesson.
 
 Use $...$ / $$...$$ LaTeX for math. Cite source numbers inline like [1]. Keep it focused: this is one sitting's worth of study, not a textbook chapter.
 
 Source material:
 ${groundingBlock(notebookId, sectionId, 6, 2400)}`,
     maxTokens: 8000,
+    tier: "content",
+    effort: "medium",
+    task: "lesson",
   });
 
   db.prepare("INSERT OR REPLACE INTO lessons (section_id, content_md) VALUES (?, ?)").run(
@@ -190,6 +198,113 @@ ${groundingBlock(notebookId, sectionId, 6, 2400)}`,
     md
   );
   return md;
+}
+
+// ---------------------------------------------------------------------------
+// Lesson check — the graded questions at the end of a lesson. This is what
+// makes reading a lesson actually move your mastery: retrieval practice, with
+// instant right/wrong feedback and an explanation. Generated once per section
+// and cached, so re-opening a lesson is free.
+
+const CHECK_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["questions"],
+  properties: {
+    questions: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["question", "options", "answer_index", "explanation"],
+        properties: {
+          question: { type: "string" },
+          options: { type: "array", items: { type: "string" } },
+          answer_index: { type: "integer" },
+          explanation: { type: "string" },
+        },
+      },
+    },
+  },
+} as const;
+
+export async function getOrGenerateLessonCheck(
+  notebookId: string,
+  sectionId: string
+): Promise<QuizItem[]> {
+  const db = getDb();
+
+  const cached = db
+    .prepare(
+      "SELECT id, section_id, type, payload FROM quiz_items WHERE section_id = ? AND source = 'lesson' ORDER BY id"
+    )
+    .all(sectionId) as { id: string; section_id: string; type: string; payload: string }[];
+  if (cached.length > 0) {
+    return cached.map((r) => ({
+      id: r.id,
+      notebook_id: notebookId,
+      section_id: r.section_id,
+      type: r.type as QuizItem["type"],
+      payload: JSON.parse(r.payload),
+    }));
+  }
+
+  const section = db.prepare("SELECT * FROM sections WHERE id = ?").get(sectionId) as
+    | Section
+    | undefined;
+  if (!section) throw new Error("Section not found");
+
+  const result = await generateJson<{
+    questions: {
+      question: string;
+      options: string[];
+      answer_index: number;
+      explanation: string;
+    }[];
+  }>({
+    system:
+      "You write retrieval-practice questions for an adaptive study engine. Every question is answerable from the source material alone. Distractors are genuinely plausible — grounded in real misconceptions — never obvious throwaways.",
+    prompt: `Write 4 multiple-choice questions checking whether the student understood the lesson on "${section.name}".
+
+${section.description}
+
+Rules:
+- Exactly 4 options each; one correct (answer_index 0-3).
+- Test understanding and application, not trivia or word-matching.
+- Each distractor should reflect a mistake a real student would make.
+- explanation: one or two sentences saying WHY the correct answer is right (and, where useful, why the tempting wrong one isn't). The student sees this immediately after answering.
+- Use $...$ LaTeX for math; keep options short.
+
+Source material:
+${groundingBlock(notebookId, sectionId, 4, 1600)}`,
+    schema: CHECK_SCHEMA as unknown as Record<string, unknown>,
+    maxTokens: 6000,
+    tier: "content",
+    effort: "medium",
+    task: "lesson-check",
+  });
+
+  const insert = db.prepare(
+    "INSERT INTO quiz_items (id, notebook_id, section_id, type, payload, source) VALUES (?, ?, ?, 'mcq', ?, 'lesson')"
+  );
+  const items: QuizItem[] = [];
+  db.transaction(() => {
+    for (const q of result.questions ?? []) {
+      if (!q.question || !q.options || q.options.length < 2) continue;
+      const payload: McqPayload = {
+        question: q.question,
+        options: q.options,
+        answer_index: Math.max(0, Math.min(q.answer_index, q.options.length - 1)),
+        explanation: q.explanation ?? "",
+      };
+      const id = uid("qi");
+      insert.run(id, notebookId, sectionId, JSON.stringify(payload));
+      items.push({ id, notebook_id: notebookId, section_id: sectionId, type: "mcq", payload });
+    }
+  })();
+
+  if (items.length === 0) throw new Error("Couldn't generate check questions for this lesson");
+  return items;
 }
 
 // ---------------------------------------------------------------------------
@@ -270,6 +385,9 @@ ${exclusionPromptBlock(listExclusions(notebookId, "quiz"), "quiz questions")}
 ${sectionBlocks}`,
     schema: QUIZ_SCHEMA as unknown as Record<string, unknown>,
     maxTokens: 12000,
+    tier: "content",
+    effort: "medium",
+    task: "quiz",
   });
 
   const byName = new Map(targets.map((t) => [t.name.toLowerCase(), t.section_id]));

@@ -48,7 +48,10 @@ function sectionRetrievability(sectionId: string, lastActivity: string | null): 
     return rs.reduce((a, b) => a + b, 0) / rs.length;
   }
   if (!lastActivity) return 1;
-  const days = (now.getTime() - new Date(lastActivity + "Z").getTime()) / 86_400_000;
+  // SQLite datetime('now') → "YYYY-MM-DD HH:MM:SS" (UTC); make it ISO before parsing.
+  const parsed = new Date(lastActivity.replace(" ", "T") + "Z").getTime();
+  if (!isFinite(parsed)) return 1;
+  const days = (now.getTime() - parsed) / 86_400_000;
   return Math.pow(0.5, Math.max(0, days) / 30);
 }
 

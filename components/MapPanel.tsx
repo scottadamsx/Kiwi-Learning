@@ -46,19 +46,33 @@ export default function MapPanel({
         .filter((s) => s.module_id === m.id)
         .forEach((s, si) => {
           const eff = effective.get(s.id) ?? 0;
+          const excluded = !!s.excluded;
           nodes.push({
             id: s.id,
             position: { x: mi * COL_W, y: 60 + si * ROW_H },
-            data: { label: `${s.name}\n${Math.round(eff * 100)}%` },
-            style: {
-              background: `hsl(${8 + eff * 100} 70% ${95 - eff * 25}%)`,
-              border: `2px solid hsl(${8 + eff * 100} 60% 45%)`,
-              borderRadius: 12,
-              fontSize: 12,
-              width: COL_W - 40,
-              padding: 10,
-              whiteSpace: "pre-line" as const,
+            data: {
+              label: excluded ? `${s.name}\n(excluded)` : `${s.name}\n${Math.round(eff * 100)}%`,
             },
+            style: excluded
+              ? {
+                  background: "#f5f5f4",
+                  border: "2px dashed #d6d3d1",
+                  color: "#a8a29e",
+                  borderRadius: 12,
+                  fontSize: 12,
+                  width: COL_W - 40,
+                  padding: 10,
+                  whiteSpace: "pre-line" as const,
+                }
+              : {
+                  background: `hsl(${8 + eff * 100} 70% ${95 - eff * 25}%)`,
+                  border: `2px solid hsl(${8 + eff * 100} 60% 45%)`,
+                  borderRadius: 12,
+                  fontSize: 12,
+                  width: COL_W - 40,
+                  padding: 10,
+                  whiteSpace: "pre-line" as const,
+                },
           });
         });
     });

@@ -125,6 +125,39 @@ function init(): Database.Database {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_exclusions_notebook ON exclusions(notebook_id, kind);
+    CREATE TABLE IF NOT EXISTS usage_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cost_usd REAL,
+      ms INTEGER NOT NULL DEFAULT 0,
+      ts TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS assignments (
+      id TEXT PRIMARY KEY,
+      notebook_id TEXT NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      brief TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS assignment_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      ts TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS assignment_steps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      text TEXT NOT NULL,
+      ts TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE TABLE IF NOT EXISTS chat_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       notebook_id TEXT NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE,
@@ -137,6 +170,12 @@ function init(): Database.Database {
   // Additive migrations for databases created before these columns existed.
   try {
     db.exec("ALTER TABLE sections ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0");
+  } catch {
+    // column already exists
+  }
+  // 'quiz' = adaptive quiz items; 'lesson' = the check at the end of a lesson.
+  try {
+    db.exec("ALTER TABLE quiz_items ADD COLUMN source TEXT NOT NULL DEFAULT 'quiz'");
   } catch {
     // column already exists
   }

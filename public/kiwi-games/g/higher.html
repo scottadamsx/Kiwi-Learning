@@ -1,0 +1,707 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+
+<style>
+  /* Paper & clay — a warm, branded surface (independent of editor theme, to match
+     the Kiwi engage mockups). Sage green + gold play supporting roles. */
+  :root{
+    --bg:#FBFAF4; --card:#FFFFFF; --line:#E2DCCC; --fg:#2E2B25; --muted:#8C8676;
+    --clay:#D97757; --clay-d:#C26343; --tint:#F6E9E2; --chip:#F3EFE7;
+    --green:#6F9A4E; --green2:#557F38; --gold:#D9A65C; --gtext:#ffffff;
+    /* Game tile fills (Memory, Minesweeper, 2048, Whack…) — must be visible vs. the bg. */
+    --tile:#E7E0CE; --hover:#EFE9DA;
+    --display:'Newsreader',Georgia,'Times New Roman',serif;
+    --sans:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  /* Fit-to-window: center the activity, never scroll the page itself. */
+  body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--fg);line-height:1.5;
+       overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding:14px 16px;
+       touch-action:manipulation;-webkit-text-size-adjust:100%}
+  /* Mobile fit for EVERY game: tall layouts scroll instead of clipping, align to the top, and pad
+     past the rounded-screen safe area so keyboards/buttons are never cut off at the edges or bottom
+     (the Word Break treatment, made global). Games may still refine this in their own media query. */
+  @media (max-width:640px){
+    html,body{height:auto;min-height:100%}
+    /* Top padding clears the fixed top bar (← All games / Shuffle chip / How to play) so it never
+       overlaps the game's "Quick Play" header — content starts below those buttons. */
+    body{overflow-y:auto;-webkit-overflow-scrolling:touch;justify-content:flex-start;
+         padding:58px 18px calc(26px + env(safe-area-inset-bottom,0px))}
+  }
+  /* Bottom-docked button bar (mobile): the runtime button-mover relocates a game's control row here,
+     below the board, so every game's buttons sit at the bottom on a phone. */
+  .kiwi-btnbar{display:flex;flex-direction:column;gap:10px;align-items:center;width:100%;margin-top:16px}
+  .kiwi-btnbar>div{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;width:100%;margin-top:0}
+  .wrap{width:100%;max-width:1080px;margin:0 auto;display:flex;flex-direction:column;min-height:0}
+  .k-label{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--clay-d)}
+  .k-title,h1{font-family:var(--display);font-weight:500;font-size:30px;line-height:1.12;margin:6px 0 0;color:var(--fg)}
+  .k-sub,.sub{color:var(--muted);font-size:13.5px;margin-top:6px}
+  .reward{color:var(--clay-d);font-weight:600}
+  .sim{display:none}
+  /* Segmented progress (done = green, current = clay, rest = line). */
+  .k-prog{display:flex;gap:6px;margin-bottom:18px}
+  .k-prog>i{flex:1;height:4px;border-radius:999px;background:var(--line)}
+  .k-prog>i.done{background:var(--green)} .k-prog>i.cur{background:var(--clay)}
+  /* Option cards */
+  .k-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px}
+  @media (max-width:520px){ .k-grid{grid-template-columns:1fr} }
+  .k-opt{display:flex;align-items:center;gap:16px;width:100%;text-align:left;cursor:pointer;
+         background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:16px 18px;
+         font-family:var(--display);font-size:21px;color:var(--fg);transition:border-color .12s,background .12s}
+  .k-opt:hover{border-color:#dcd5c6}
+  .k-opt.sel{border-color:var(--clay);background:var(--tint)}
+  .k-opt-ic{flex:0 0 auto;width:44px;height:44px;border-radius:12px;background:var(--chip);
+            display:flex;align-items:center;justify-content:center;font-size:20px}
+  .k-opt.sel .k-opt-ic{background:var(--clay);color:#fff}
+  .k-actions{display:flex;align-items:center;justify-content:space-between;margin-top:24px}
+  .k-hint{color:var(--muted);font-size:13px}
+  .k-primary{background:var(--clay);color:var(--gtext);border:0;border-radius:14px;padding:14px 26px;
+             font-family:var(--sans);font-weight:600;font-size:15px;cursor:pointer;box-shadow:0 8px 20px -10px rgba(201,96,60,.6)}
+  .k-primary:hover{background:var(--clay-d)} .k-primary:disabled{opacity:.5;cursor:default;box-shadow:none}
+  .k-ghost{background:var(--card);color:var(--fg);border:1.5px solid var(--line);border-radius:12px;
+           padding:11px 18px;font-family:var(--sans);font-weight:600;font-size:14px;cursor:pointer}
+  .k-ghost:hover{background:var(--chip)}
+  .center{text-align:center}
+  /* Two centered divs side by side: title/info on the left, the game/video on the right. */
+  .k-split{display:flex;flex-direction:row;align-items:center;justify-content:center;gap:26px;width:100%;flex-wrap:wrap}
+  .k-split>.k-left{flex:0 1 300px;min-width:220px;max-width:340px}
+  .k-split>.k-right{flex:0 0 auto;display:flex;align-items:center;justify-content:center}
+  @media (max-width:600px){ .k-split{gap:22px} .k-split>.k-left{flex:1 1 100%;max-width:none} }
+  /* Game canvases/boards: keep their natural size, centered — don't let the column's
+     align-items:stretch blow them up to full width. Cap so they always fit. */
+  /* Games fill more of the screen: canvases scale UP to the available space (width + max-height,
+     height:auto → aspect ratio preserved). Pointer games map coords through the displayed size,
+     so this is safe. */
+  canvas{align-self:center;width:min(92vw,560px);height:auto;max-height:66vh}
+  #grid,#board,#pads,.gameboard,.adwrap{align-self:center;max-width:100%}
+  /* DOM-based boards (2048, memory, minesweeper, simon…) scale up crisply; children scale with
+     them so clicks stay accurate. */
+  #grid,#board,#pads,.gameboard{zoom:1.22}
+  /* Generic button fallback (older games) — clay pill. */
+  button{background:var(--clay);color:var(--gtext);border:0;border-radius:12px;padding:11px 20px;font-family:var(--sans);font-weight:600;cursor:pointer;font-size:14px}
+  button:hover{background:var(--clay-d)} button:disabled{opacity:.5;cursor:default}
+  p{margin:0 0 12px}
+  .cell,.mc,.ft,.hole,.pad{padding:0!important;line-height:1;font-family:inherit}
+  /* Shake (invalid Word Break key) + score pop (point feedback). */
+  @keyframes kshake{0%,100%{transform:translateX(0)}20%{transform:translateX(-4px)}60%{transform:translateX(4px)}}
+  .shake{animation:kshake .28s}
+  @keyframes kpop{0%{transform:scale(1)}35%{transform:scale(1.22)}100%{transform:scale(1)}}
+  .k-earn{font-weight:700;color:var(--clay-d);display:inline-block}
+  .k-earn.pop,.pop{animation:kpop .35s}
+  .k-win{color:var(--green);font-weight:700} .k-lose{color:var(--clay-d);font-weight:700}
+  /* Big live score for games — large so you can read it at a glance while playing. */
+  .k-bigscore{display:flex;align-items:baseline;gap:12px;margin-top:10px}
+  .k-bigscore-n{font-family:var(--display);font-weight:700;font-size:56px;line-height:1;color:var(--fg);font-variant-numeric:tabular-nums}
+  .k-bigscore-hi{font-size:13px;font-weight:700;letter-spacing:.06em;color:var(--clay-d)}
+  @media (max-height:560px){ .k-bigscore-n{font-size:42px} }
+  /* Tighten for short panels so things still fit without scrolling. */
+  @media (max-height:560px){ body{padding:18px 22px} .k-title,h1{font-size:24px} .k-grid{margin-top:14px;gap:10px} .k-opt{padding:12px 14px;font-size:18px} .k-opt-ic{width:38px;height:38px} .k-actions{margin-top:16px} }
+  @media (max-height:420px){ .k-title,h1{font-size:20px} .k-opt{font-size:16px} }
+  /* --- B13 premium game shell: shared vocabulary every game can adopt --------------------- */
+  /* Stage: the board/canvas frame — a designed paper card, not a floating void. */
+  .k-right{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:14px;
+           box-shadow:0 14px 32px -20px rgba(46,43,37,.38),0 2px 10px -6px rgba(46,43,37,.16)}
+  @media (max-width:600px){ .k-right{padding:14px;border-radius:16px} }
+  /* HUD strip: title / one-line rule / status cluster (score + earn chip) — see gameHead(). */
+  .k-hud-rule{height:1px;border:0;background:var(--line);margin:12px 0 2px}
+  /* Small pill chip (best-tile, pairs-progress, etc.) */
+  .k-chip{display:inline-flex;align-items:center;gap:6px;background:var(--chip);color:var(--clay-d);
+          font-size:11.5px;font-weight:700;letter-spacing:.02em;padding:5px 10px;border-radius:999px}
+  /* Earn button as a chip (clean, no emoji): a small lock glyph when locked, nothing when claimable. */
+  .k-earnbtn::before{content:'\2022';margin-right:7px;font-size:13px;vertical-align:1px;opacity:.55}
+  .k-earnbtn:not(:disabled)::before{content:'';margin-right:0}
+  .k-earnbtn.k-earn-ready{animation:kglowpulse 900ms ease-out}
+  @keyframes kglowpulse{0%{box-shadow:0 0 0 0 rgba(217,119,87,.55)}70%{box-shadow:0 0 0 14px rgba(217,119,87,0)}100%{box-shadow:0 0 0 0 rgba(217,119,87,0)}}
+  /* Press-down feedback for interactive controls. */
+  .k-press{transition:transform .08s ease}
+  .k-press:active{transform:scale(.96)}
+  /* Tile spawn / merge (2048 et al). */
+  @keyframes ktilepop{0%{transform:scale(.55);opacity:.3}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+  .k-tilepop{animation:ktilepop .26s cubic-bezier(.2,.9,.3,1.2)}
+  @keyframes kmergepulse{0%{transform:scale(1)}40%{transform:scale(1.16)}100%{transform:scale(1)}}
+  .k-mergepulse{animation:kmergepulse .22s ease-out}
+  /* Refined shake (mismatch / invalid input) — softer than the legacy .shake. */
+  @keyframes kshakesoft{0%,100%{transform:translateX(0) rotate(0)}25%{transform:translateX(-3px) rotate(-2deg)}75%{transform:translateX(3px) rotate(2deg)}}
+  .k-shake-soft{animation:kshakesoft .4s ease-in-out}
+  /* CPU "thinking" pulse. */
+  @keyframes kthinkdot{0%,100%{opacity:.3;transform:scale(.85)}50%{opacity:1;transform:scale(1.1)}}
+  .k-thinking{animation:kthinkdot 1s ease-in-out infinite}
+  /* Win glow-pulse — a tasteful celebration beat, no confetti libs. */
+  @keyframes kwinglow{0%{box-shadow:0 0 0 0 rgba(111,154,78,.5)}70%{box-shadow:0 0 0 16px rgba(111,154,78,0)}100%{box-shadow:0 0 0 0 rgba(111,154,78,0)}}
+  .k-winglow{animation:kwinglow 1.1s ease-out}
+  /* Progress pips — filled/empty round indicators (best-of trackers, pairs matched, etc.). */
+  .k-pips{display:flex;gap:7px}
+  .k-pip{width:9px;height:9px;border-radius:50%;background:var(--line);transition:background .15s,transform .15s}
+  .k-pip.k-pip-win{background:var(--green)}
+  .k-pip.k-pip-lose{background:var(--clay)}
+  .k-pip.k-pip-draw{background:var(--muted)}
+  /* Floating "+delta" score pop. */
+  @keyframes kfloatup{0%{opacity:0;transform:translateY(4px) scale(.9)}20%{opacity:1;transform:translateY(-2px) scale(1.05)}100%{opacity:0;transform:translateY(-20px) scale(1)}}
+  .k-scoredelta{position:absolute;font-weight:700;color:var(--clay-d);font-size:13px;pointer-events:none;animation:kfloatup .9s ease-out forwards}
+  @media (prefers-reduced-motion:reduce){
+    .k-earnbtn.k-earn-ready,.k-tilepop,.k-mergepulse,.k-shake-soft,.k-thinking,.k-winglow,.k-scoredelta,.shake,.pop{animation:none!important}
+    .k-press:active{transform:none}
+  }
+</style><link rel="stylesheet" href="../assets/kiwi-fonts.css"><title>Higher or Lower — Kiwi Games</title><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#6F9A4E"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Kiwi Games"><link rel="apple-touch-icon" href="/icon.svg"><link rel="icon" type="image/svg+xml" href="/icon.svg"><script>if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script><script src="../assets/kiwi-auth-config.js"></script>
+<style id="kiwi-learning-patch">
+  /* Arcade-only chrome: earn/claim buttons and the back-to-gallery link. */
+  .k-earnbtn, #done, a[href*="index.html"] { display: none !important; }
+  body { background: transparent !important; }
+  /* Tighten padding so the game fits a compact embed. */
+  .wrap { padding: 10px !important; }
+</style>
+<script>
+  // Neutralize the arcade's earn/auth layer — Kiwi Learning games are just for fun.
+  window.KiwiAuth = window.KiwiAuth || {};
+  window.KIWI_AUTH_CONFIG = window.KIWI_AUTH_CONFIG || { disabled: true };
+</script>
+</head><body data-dpad="0"><script>
+window.acquireVsCodeApi=function(){var st={};return{postMessage:function(m){try{if(m&&m.type==='complete'){window.__kiwiRecord&&window.__kiwiRecord(m);window.__kiwiWin&&window.__kiwiWin(m);window.__kiwiShuffleNext&&window.__kiwiShuffleNext(m);}}catch(e){}},getState:function(){return st;},setState:function(v){st=v;return v;}};};
+window.__kiwiWin=function(m){var d=document.createElement('div');var s=(m&&m.score!=null)?('  ·  Score '+m.score):'';var e=(window.__kiwiEarned|0);var es=e>0?('  ·  +'+e+' Seeds'):'';d.textContent=((m&&m.won)?'You win!':'Nice game!')+s+es;d.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#2E2B25;color:#fff;font:600 14px Geist,-apple-system,system-ui,sans-serif;padding:12px 20px;border-radius:999px;z-index:99999;box-shadow:0 12px 34px -10px rgba(0,0,0,.5)';document.body.appendChild(d);setTimeout(function(){d.style.transition='opacity .45s';d.style.opacity='0';setTimeout(function(){d.remove();},450);},2600);};
+</script><script>
+  var KIWI_EASY=["rps","war","higher","dice","reaction","whack","oddone","stroop","aim","pig","flyer","simon","lights","memory","tictactoe","fruit","ladder","gridseek","rhythmtaps","typing","colorpick"],KIWI_HARD=["chess","sudokumini","nonogram","sokoban","mastermind","2048","blockcascade","gomoku","reversi","skipbo","unicorns","solitaire","pipes","minesweeper","asteroids","centipede","bullscows","invaders","starblaster","missilecommand","battleship","anagrams","twentyfour","wordle"];
+  function kiwiBase(id){ return KIWI_HARD.indexOf(id)>=0?50:(KIWI_EASY.indexOf(id)>=0?10:25); }
+  function kiwiPoints(rec,id){ return (rec&&rec.plays>0)?kiwiBase(id):0; }
+  window.__kiwiRecord=function(m){
+    try{
+      var gid=(location.pathname.split('/').pop()||'game').replace('.html','');
+      var recs={}; try{ recs=JSON.parse(localStorage.getItem('kiwi.records')||'{}'); }catch(e){}
+      var r=recs[gid]||{best:0,plays:0,wins:0};
+      var prevBest=r.best||0;
+      r.plays=(r.plays||0)+1; if(m&&m.won){ r.wins=(r.wins||0)+1; }
+      // Prefer the score the game reports; fall back to the best live score it showed (many games
+      // call kiwiComplete() with no score, so this is what makes "best" actually stick).
+      var sc=(m&&typeof m.score==='number'&&m.score>0)?m.score:((window.__kiwiScore|0)||0);
+      if(sc>(r.best||0)){ r.best=sc; }
+      recs[gid]=r; localStorage.setItem('kiwi.records',JSON.stringify(recs));
+      var total=0; for(var k in recs){ total+=kiwiPoints(recs[k],k); }
+      localStorage.setItem('kiwi.score',String(total));
+      // Seeds are EARNED BY PERFORMANCE and credited to your spendable wallet — no more flat payout.
+      // Casino games (Blackjack, Texas Hold'em) wager their own wallet, so skip them (no double-pay).
+      var WALLET_GAMES={blackjack:1,poker:1};
+      if(!WALLET_GAMES[gid]){
+        var wt=kiwiBase(gid);                            // 10 / 25 / 50 difficulty weight
+        var earned=(m&&m.won)?wt:Math.round(wt*0.3);     // a win pays full; otherwise a small amount
+        if(sc>prevBest){ earned+=Math.round(wt*0.6); }   // beating your own best pays a skill bonus
+        if(earned<1){ earned=1; }
+        window.__kiwiEarned=earned;
+        try{ if(window.KiwiWallet) KiwiWallet.add(earned); }catch(e){}
+      } else { window.__kiwiEarned=0; }
+      submitScore(gid,r.best);
+    }catch(e){}
+  };
+  function submitScore(gid,best){
+    try{
+      var cfg=window.KIWI_AUTH_CONFIG; if(!cfg||!cfg.enabled||!cfg.url) return;
+      var tok=null,uid=null;
+      for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i);
+        if(k&&k.indexOf('sb-')===0&&k.indexOf('-auth-token')>-1){ var raw=localStorage.getItem(k); if(!raw)continue;
+          var v=JSON.parse(raw); var s=(v&&v.access_token)?v:(v&&v.currentSession)?v.currentSession:null;
+          if(s&&s.access_token){ tok=s.access_token; uid=s.user&&s.user.id; } } }
+      if(!tok||!uid) return;
+      fetch(cfg.url+'/rest/v1/high_scores',{method:'POST',headers:{'apikey':cfg.anonKey,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},body:JSON.stringify({user_id:uid,game:gid,score:Math.round(best||0),updated_at:new Date().toISOString()})}).catch(function(){});
+    }catch(e){}
+  }
+  // GLOBAL best-score capture: every game shows a live score (kScore / the #status auto-driver keep
+  // window.__kiwiScore = your best this session). When you leave a game — even WITHOUT claiming — we
+  // persist that best so its Best chip shows on the gallery and syncs to your account. This is why
+  // EVERY game you actually score on gets a record, not just ones with a Claim button you pressed.
+  function recordLiveBest(){
+    try{
+      var s=(window.__kiwiScore|0)||0; if(s<=0) return;
+      var gid=(location.pathname.split('/').pop()||'game').replace('.html','');
+      var recs={}; try{ recs=JSON.parse(localStorage.getItem('kiwi.records')||'{}'); }catch(e){}
+      var r=recs[gid]||{best:0,plays:0,wins:0};
+      if(s>(r.best||0)){ r.best=s; recs[gid]=r; try{localStorage.setItem('kiwi.records',JSON.stringify(recs));}catch(e){} submitScore(gid,r.best); }
+    }catch(e){}
+  }
+  window.addEventListener('pagehide',recordLiveBest);
+  document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden') recordLiveBest(); });
+</script><script>
+(function(){
+  var POOL=["wordle","pong","fruit","minesweeper","pacman","flyer","2048","memory","snake","fifteen","simon","whack","blackjack","poker","tripeak","war","higher","tictactoe","connect","mastermind","lights","rps","reaction","breakout","typing","stroop","aim","pig","dice","oddone","maze","sokoban","blockcascade","ladder","reversi","dotsboxes","nonogram","sudokumini","bullscows","anagrams","bankroll21","pipes","rhythmtaps","checkers","gomoku","gridseek","twentyfour","lanehopper","invaders","asteroids","dino","runner","jetpack","doodlejump","fruitslice","tron","frogger","towerstack","missilecommand","bubbleshooter","starblaster","meteordodge","airhockey","centipede","battleship","chess","skipbo","solitaire","unicorns","rummy","hearts","spades","gofish","crazy8s","cribbage","oldmaid","speed","golf","euchre","rummy500","kingscorner","snap"];
+  function on(){ try{ return localStorage.getItem('kiwi.shuffle')==='1'; }catch(e){ return false; } }
+  function nextGame(){ var gid=(location.pathname.split('/').pop()||'').replace('.html',''); var p=POOL.filter(function(x){return x!==gid;}); if(!p.length)p=POOL; if(!p.length)return; location.href=p[Math.floor(Math.random()*p.length)]+'.html'; }
+  function stop(){ try{ localStorage.removeItem('kiwi.shuffle'); }catch(e){} var a=document.getElementById('kiwi-shuffle-chip'); if(a)a.remove(); var o=document.getElementById('kiwi-keep'); if(o)o.remove(); }
+  var ended=false, autoT=null;
+  function keepPlaying(win){
+    if(!on()||ended)return; ended=true;
+    var earned=(window.__kiwiEarned|0);
+    var o=document.createElement('div'); o.id='kiwi-keep';
+    o.style.cssText='position:fixed;inset:0;z-index:100000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:rgba(28,27,22,.82);text-align:center;padding:24px;font-family:Geist,-apple-system,system-ui,sans-serif;color:#fff';
+    o.innerHTML='<div style="font-family:Newsreader,Georgia,serif;font-weight:600;font-size:30px">'+(win?'Nice one!':'Good try!')+'</div>'+
+      '<div style="font-weight:600;font-size:14px;opacity:.85">'+(earned>0?('+'+earned+' Seeds \u00b7 '):'')+'Next game in <span id="kk-c">3</span>\u2026</div>'+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:2px">'+
+        '<button id="kk-go" style="background:#6F9A4E;color:#fff;border:0;border-radius:13px;padding:14px 24px;font-family:inherit;font-weight:800;font-size:16px;cursor:pointer;box-shadow:0 12px 26px -12px rgba(111,154,78,.8)">Keep playing \u2192</button>'+
+        '<button id="kk-stop" style="background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:13px;padding:14px 20px;font-family:inherit;font-weight:700;font-size:14px;cursor:pointer">Stop shuffle</button>'+
+      '</div>';
+    document.body.appendChild(o);
+    document.getElementById('kk-go').addEventListener('click',function(){ if(autoT)clearTimeout(autoT); nextGame(); });
+    document.getElementById('kk-stop').addEventListener('click',function(){ if(autoT)clearTimeout(autoT); stop(); });
+    var n=3,cEl=document.getElementById('kk-c'); var iv=setInterval(function(){ n--; if(cEl)cEl.textContent=(n>0?n:0); if(n<=0)clearInterval(iv); },1000);
+    autoT=setTimeout(nextGame,3300);
+  }
+  // Win / any reported completion: the shim calls this on kiwiComplete (passes the payload).
+  window.__kiwiShuffleNext=function(m){ if(!on())return; keepPlaying(!(m&&m.won===false)); };
+  // Loss: most games never call kiwiComplete on a game-over, so watch #status for a clear terminal
+  // phrase and offer Keep Playing then too.
+  function watchLoss(){
+    var st=document.getElementById('status'); if(!st)return;
+    var RE=/(game over|you lose|you lost|checkmate|run over|ship lost|out of (tries|balls|moves|time)|no moves|better luck|caught|time'?s? up|\btime!)/i;
+    var fire=function(){ if(RE.test(String(st.textContent||''))) keepPlaying(false); };
+    try{ new MutationObserver(fire).observe(st,{childList:true,characterData:true,subtree:true}); }catch(e){}
+  }
+  if(on()){ document.addEventListener('DOMContentLoaded',function(){
+    var b=document.createElement('div'); b.id='kiwi-shuffle-chip';
+    b.style.cssText='position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:71;display:inline-flex;gap:7px;align-items:center;background:#6F9A4E;color:#fff;font-family:Geist,-apple-system,system-ui,sans-serif;font-weight:700;font-size:12px;padding:5px 7px 5px 13px;border-radius:999px;box-shadow:0 8px 20px -8px rgba(46,43,37,.55)';
+    b.innerHTML='\u2928 Shuffle on <button id="kk-off" style="background:rgba(255,255,255,.9);color:#3d5a2a;border:0;border-radius:999px;padding:4px 11px;font-family:inherit;font-weight:800;font-size:11.5px;cursor:pointer">Stop</button>';
+    document.body.appendChild(b);
+    document.getElementById('kk-off').addEventListener('click',stop);
+    watchLoss();
+  }); }
+})();
+</script><script>
+(function(){
+  function reflow(){
+    try{
+      if(!window.matchMedia||!matchMedia('(max-width:640px)').matches)return;
+      var split=document.querySelector('.k-split'); if(!split)return;
+      var left=split.querySelector('.k-left'); var host=split.parentNode; if(!left||!host)return;
+      if(host.querySelector('.kiwi-btnbar'))return;
+      var rows=[],kids=left.children;
+      for(var i=0;i<kids.length;i++){ var el=kids[i]; if(el.tagName==='DIV'&&el.querySelector&&el.querySelector('button.k-press,button.k-earnbtn')){ rows.push(el); } }
+      if(!rows.length)return;
+      var bar=document.createElement('div'); bar.className='kiwi-btnbar';
+      for(var j=0;j<rows.length;j++){ bar.appendChild(rows[j]); }
+      host.appendChild(bar);
+    }catch(e){}
+  }
+  if(document.readyState!=='loading')reflow(); else document.addEventListener('DOMContentLoaded',reflow);
+})();
+</script><a href="../index.html" style="position:fixed;top:12px;left:14px;z-index:60;display:inline-flex;align-items:center;gap:6px;text-decoration:none;background:#fff;color:#C26343;border:1.5px solid #E2DCCC;border-radius:999px;padding:6px 13px;font:600 12.5px Geist,-apple-system,system-ui,sans-serif;box-shadow:0 6px 16px -10px rgba(46,43,37,.5)">← All games</a><style>
+  .kc-btnfix{position:fixed;bottom:14px;left:14px;z-index:60;display:flex;gap:8px}
+  .kc-restart{display:inline-flex;align-items:center;gap:6px;
+    background:#fff;color:#C26343;border:1.5px solid #E2DCCC;border-radius:999px;padding:7px 14px;cursor:pointer;
+    font:600 12.5px Geist,-apple-system,system-ui,sans-serif;box-shadow:0 6px 16px -10px rgba(46,43,37,.5)}
+  .kc-restart:hover{border-color:#D97757}
+  .kc-random{background:#6F9A4E;color:#fff;border-color:#6F9A4E}
+  .kc-random:hover{background:#557F38;border-color:#557F38}
+  :root[data-kiwi-theme="dark"] .kc-restart{background:#26241D;border-color:#3A362B;color:#E0906F}
+  :root[data-kiwi-theme="dark"] .kc-random{background:#557F38;border-color:#557F38;color:#fff}
+  :root[data-kiwi-theme="dark"] a[href$="index.html"]{background:#26241D!important;border-color:#3A362B!important}
+</style>
+<div class="kc-btnfix"><button class="kc-restart" id="kc-restart" title="Restart this game">↻ Restart</button><button class="kc-restart kc-random" id="kc-random" title="Skip to another game" style="display:none">⤨ Skip</button></div>
+<script>
+  // Save / resume: a tiny per-game, per-page state store any game can opt into.
+  //   KiwiSave.save(stateObj)  — persist a snapshot (call it after each move/turn)
+  //   KiwiSave.load()          — get the snapshot back on load (or null)
+  //   KiwiSave.clear()         — drop it (call on game over / win)
+  //   KiwiSave.has()           — is there a saved game?
+  // Keyed by the page's game id so each game keeps its own save. Also records "last played"
+  // and a small index the gallery reads to offer "Continue where you left off".
+  (function(){
+    var gid=(location.pathname.split('/').pop()||'game').replace('.html','');
+    function idx(){ try{ return JSON.parse(localStorage.getItem('kiwi.saves')||'{}'); }catch(e){ return {}; } }
+    window.KiwiSave={
+      gid:gid,
+      save:function(state){ try{ localStorage.setItem('kiwi.save.'+gid, JSON.stringify(state));
+        var m=idx(); m[gid]=Date.now(); localStorage.setItem('kiwi.saves', JSON.stringify(m)); }catch(e){} },
+      load:function(){ try{ var r=localStorage.getItem('kiwi.save.'+gid); return r?JSON.parse(r):null; }catch(e){ return null; } },
+      has:function(){ try{ return !!localStorage.getItem('kiwi.save.'+gid); }catch(e){ return false; } },
+      clear:function(){ try{ localStorage.removeItem('kiwi.save.'+gid); var m=idx(); delete m[gid]; localStorage.setItem('kiwi.saves', JSON.stringify(m)); }catch(e){} }
+    };
+  })();
+  (function(){
+    // Shared, spendable Seeds bankroll used by the casino games (Blackjack, Video Poker, …). One
+    // balance across every game. New players start at 100; if you ever bust to 0 you get a small
+    // refill so you're never locked out. Separate from the leaderboard's lifetime score.
+    var KEY='kiwi.wallet', START=100, REFILL=25;
+    function get(){ try{ var v=localStorage.getItem(KEY); if(v===null){ localStorage.setItem(KEY,String(START)); return START; } var n=parseInt(v,10); return isNaN(n)?START:n; }catch(e){ return START; } }
+    function put(n){ try{ localStorage.setItem(KEY,String(Math.max(0,Math.round(n)))); }catch(e){} return Math.max(0,Math.round(n)); }
+    window.KiwiWallet={
+      balance:get,
+      set:function(n){ return put(n); },
+      add:function(n){ return put(get()+(n||0)); },
+      spend:function(n){ n=n||0; var b=get(); if(n>b) return false; put(b-n); return true; },
+      // Call when a player is broke so they can keep playing; returns the topped-up balance.
+      ensure:function(min){ min=min||REFILL; var b=get(); if(b<min){ return put(min); } return b; }
+    };
+  })();
+  (function(){
+    document.getElementById('kc-restart').addEventListener('click',function(){ try{ if(window.KiwiSave) KiwiSave.clear(); }catch(e){} location.reload(); });
+    // "Skip" button next to Restart — ONLY during a shuffle session: bail on the current game and
+    // jump to another random single-player one.
+    var __RPOOL=["wordle","pong","fruit","minesweeper","pacman","flyer","2048","memory","snake","fifteen","simon","whack","blackjack","poker","tripeak","war","higher","tictactoe","connect","mastermind","lights","rps","reaction","breakout","typing","stroop","aim","pig","dice","oddone","maze","sokoban","blockcascade","ladder","reversi","dotsboxes","nonogram","sudokumini","bullscows","anagrams","bankroll21","pipes","rhythmtaps","checkers","gomoku","gridseek","twentyfour","lanehopper","invaders","asteroids","dino","runner","jetpack","doodlejump","fruitslice","tron","frogger","towerstack","missilecommand","bubbleshooter","starblaster","meteordodge","airhockey","centipede","battleship","chess","skipbo","solitaire","unicorns","rummy","hearts","spades","gofish","crazy8s","cribbage","oldmaid","speed","golf","euchre","rummy500","kingscorner","snap"];
+    var __rb=document.getElementById('kc-random');
+    var __inShuffle=false; try{ __inShuffle=localStorage.getItem('kiwi.shuffle')==='1'; }catch(e){}
+    if(__rb && __inShuffle){ __rb.style.display='';
+      __rb.addEventListener('click',function(){ var gid=(location.pathname.split('/').pop()||'').replace('.html',''); var p=__RPOOL.filter(function(x){return x!==gid;}); if(!p.length)p=__RPOOL; if(p.length){ location.href=p[Math.floor(Math.random()*p.length)]+'.html'; } }); }
+    var CODES={ArrowUp:'ArrowUp',ArrowDown:'ArrowDown',ArrowLeft:'ArrowLeft',ArrowRight:'ArrowRight',' ':'Space',Enter:'Enter'};
+    var KEYS={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,' ':32,Enter:13};
+    // Deliver a synthetic key to the game's actual play surface. Games attach keydown to a canvas
+    // or a [tabindex] board (most) or to document (a few). We dispatch ON the play surface with
+    // bubbles:true so it reaches BOTH a canvas-attached listener AND any document-level listener —
+    // and it works even when focus is on a button (e.g. the Claim button), which the old
+    // activeElement-based version broke.
+    function surface(){
+      var c=document.querySelector('canvas'); if(c){ return c; }
+      var t=document.querySelector('[tabindex]'); if(t){ return t; }
+      var a=document.activeElement; if(a&&a!==document.body&&a!==document.documentElement){ return a; }
+      return document.body;
+    }
+    function dispatch(target,type,key){
+      var ev;
+      try{ ev=new KeyboardEvent(type,{key:key,code:CODES[key]||key,keyCode:KEYS[key]||0,which:KEYS[key]||0,bubbles:true,cancelable:true}); }
+      catch(e){ ev=document.createEvent('Event'); ev.initEvent(type,true,true); ev.key=key; ev.keyCode=KEYS[key]||0; ev.which=KEYS[key]||0; }
+      target.dispatchEvent(ev);
+    }
+    function keyDown(key){ var s=surface(); try{ if(s&&s.tagName==='CANVAS'&&s.focus){ s.focus(); } }catch(e){} dispatch(s,'keydown',key); }
+    function keyUp(key){ dispatch(surface(),'keyup',key); }
+    function tapKey(key){ keyDown(key); keyUp(key); }   // momentary — for discrete-move games
+    // Mobile controls for arrow-key games (data-dpad="1", set per-game at build time): NO on-screen
+    // D-pad — swipe to move and tap for the action, which is cleaner. Card / board / click / pointer
+    // games get nothing injected (they use native taps).
+    var dpadOn=document.body.getAttribute('data-dpad')==='1';
+    // Swipe-to-arrow anywhere on the game area (tap = Action/Space for jump-style games) — only for
+    // arrow-key games. Ignores touches that start on a button/link/input so the UI keeps working.
+    var sx=0,sy=0,st=0,moved=false;
+    function interactive(el){ while(el&&el!==document.body){ var t=(el.tagName||'').toLowerCase(); if(t==='button'||t==='a'||t==='input'||t==='select'||t==='textarea') return true; el=el.parentNode; } return false; }
+    if(dpadOn){
+    // A game can set window.__kiwiOwnTouch=true to take over touch itself (custom gestures) — skip
+    // the generic swipe->arrow / tap->Space translation for it so the two don't fight.
+    document.addEventListener('touchstart',function(e){ if(window.__kiwiOwnTouch||interactive(e.target))return; var t=e.touches[0]; sx=t.clientX; sy=t.clientY; st=e.timeStamp; moved=false; },{passive:true});
+    // Stop the page from scrolling/bouncing while you swipe to play an arrow-key game.
+    document.addEventListener('touchmove',function(e){ if(!window.__kiwiOwnTouch&&!interactive(e.target)&&e.cancelable){ e.preventDefault(); } },{passive:false});
+    document.addEventListener('touchend',function(e){ if(window.__kiwiOwnTouch||interactive(e.target))return; var t=e.changedTouches[0]; var dx=t.clientX-sx, dy=t.clientY-sy; var adx=Math.abs(dx), ady=Math.abs(dy);
+      if(adx<24&&ady<24){ tapKey(' '); return; }                         // tap → Space
+      if(adx>ady){ tapKey(dx>0?'ArrowRight':'ArrowLeft'); } else { tapKey(dy>0?'ArrowDown':'ArrowUp'); }
+    },{passive:true});
+    }
+  })();
+</script><script>
+  const vscode = acquireVsCodeApi();
+  // --- "Track everything": every click, key, scroll (+ depth), mouse move (+ distance), plus
+  //     thinking time (ms to first action) and derived move speed. Games may bump KM.moves /
+  //     KM.guesses. Snapshot is sent on completion, every 3s, and on hide (so skips count too). ---
+  var KM = { startedAt: Date.now(), firstInputMs: null, clicks: 0, keys: 0, scrolls: 0, maxScrollPct: 0, maxScrollSpeed: 0, skimStartPct: -1, mouseMoves: 0, mouseDistPx: 0, moves: 0, guesses: 0, qType: '', qRating: 0, qChoice: '', qInterests: [], qTarget: '', _lx: null, _ly: null, _st: 0, _sy: 0 };
+  function _kfirst(){ if (KM.firstInputMs === null) { KM.firstInputMs = Date.now() - KM.startedAt; } }
+  document.addEventListener('click', function(){ KM.clicks++; _kfirst(); }, true);
+  document.addEventListener('keydown', function(){ KM.keys++; _kfirst(); }, true);
+  document.addEventListener('mousemove', function(e){ KM.mouseMoves++; if (KM._lx !== null) { KM.mouseDistPx += Math.abs(e.clientX - KM._lx) + Math.abs(e.clientY - KM._ly); } KM._lx = e.clientX; KM._ly = e.clientY; }, true);
+  document.addEventListener('scroll', function(ev){ KM.scrolls++; var t = ev && ev.target; var d = (t && t.nodeType === 1 && t.scrollHeight > t.clientHeight) ? t : (document.scrollingElement || document.documentElement); if (d && d.scrollHeight > d.clientHeight) { var p = Math.round(100 * d.scrollTop / (d.scrollHeight - d.clientHeight)); if (p > KM.maxScrollPct) { KM.maxScrollPct = p; } var now = Date.now(); if (KM._st) { var dt = (now - KM._st) / 1000; if (dt > 0) { var v = Math.abs(d.scrollTop - KM._sy) / dt; if (v > KM.maxScrollSpeed) { KM.maxScrollSpeed = Math.round(v); } if (v > 1200 && KM.skimStartPct < 0) { KM.skimStartPct = p; } } } KM._st = now; KM._sy = d.scrollTop; } }, true);
+  function kmSnapshot(){ var sec = Math.max(0.001, (Date.now() - KM.startedAt) / 1000); return { firstInputMs: KM.firstInputMs, clicks: KM.clicks, keys: KM.keys, scrolls: KM.scrolls, maxScrollPct: KM.maxScrollPct, maxScrollSpeed: KM.maxScrollSpeed, skimStartPct: KM.skimStartPct, mouseMoves: KM.mouseMoves, mouseDistPx: Math.round(KM.mouseDistPx), moves: KM.moves, guesses: KM.guesses, articleWords: KM.articleWords || 0, readSec: Math.round((KM.readMs || 0) / 1000), wpm: KM.wpm || 0, dwellCV: KM.dwellCV || 0, dwellDeciles: KM.dwellDeciles || [], qType: KM.qType || '', qRating: KM.qRating || 0, qChoice: KM.qChoice || '', qInterests: KM.qInterests || [], qTarget: KM.qTarget || '', articleTitle: KM.articleTitle || '', actions: KM.clicks + KM.keys, actionsPerSec: Math.round((KM.clicks + KM.keys) / sec * 100) / 100, activeSec: Math.round(sec) }; }
+  setInterval(function(){ try { vscode.postMessage({ type: 'metrics', metrics: kmSnapshot() }); } catch(e){} }, 3000);
+  window.addEventListener('pagehide', function(){ try { vscode.postMessage({ type: 'metrics', metrics: kmSnapshot() }); } catch(e){} });
+  // bonusSeeds = extra Seeds (survival games pay more the longer you last); score = the raw game score.
+  function kiwiComplete(bonusSeeds, score, won){ vscode.postMessage({type:'complete', bonusSeeds: Math.max(0, Math.round(bonusSeeds||0)), score: (score===undefined||score===null)?null:Math.round(score), won: (won===undefined?null:!!won), metrics: kmSnapshot()}); }
+  // Brief pop to flag a point/score change.
+  function kpop(el){ if(!el)return; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+  // --- Big live score for games -------------------------------------------------------------
+  // Shows the running score in large font as you play, with your all-time best for this game
+  // (injected by the host as __KIWI_BEST). Games can call window.kScore(n) directly; otherwise an
+  // auto-driver mirrors the score out of the game's #status line so EVERY game gets a big readout.
+  var KBEST = (window.__KIWI_BEST | 0) || 0;
+  function kScore(n){
+    n = Math.round(n || 0);
+    if (n > KBEST) { KBEST = n; }
+    try { window.__kiwiScore = KBEST; } catch (e) {}   // best live score this session (records fallback)
+    var box = document.getElementById('kbigscore'); if (!box) { return; }
+    var nowEl = document.getElementById('kbs-now'), hiEl = document.getElementById('kbs-hi');
+    box.style.display = '';
+    if (nowEl) { nowEl.textContent = n; kpop(nowEl); }
+    if (hiEl) { hiEl.textContent = KBEST > 0 ? ('BEST ' + KBEST) : ''; }
+  }
+  window.kScore = kScore;
+  (function(){
+    // Pull the score out of common status phrasings ("Score: 5", "Dots: 3", "Got 7", "Level 4"),
+    // ignoring lines that have no score (e.g. "Mines left: 10"). Leading number of a matched phrase.
+    function scoreFrom(t){ var m = String(t || '').match(/(?:score|dots|points|got|level|streak|combo)D*(-?d+)/i); return m ? parseInt(m[1], 10) : null; }
+    function tick(){ var st = document.getElementById('status'); if (!st) { return; } var n = scoreFrom(st.textContent); if (n !== null) { kScore(n); } }
+    function attach(){ var st = document.getElementById('status'); if (st) { try { new MutationObserver(tick).observe(st, { childList: true, characterData: true, subtree: true }); } catch(e){} tick(); } }
+    if (document.readyState !== 'loading') { attach(); } else { document.addEventListener('DOMContentLoaded', attach); }
+  })();
+  window.addEventListener('error', function(ev){ try{ console.log('[KIWI-ERR] '+(ev.message||'')+' @'+ev.lineno+':'+ev.colno); }catch(e){} });
+</script><style>
+  /* Card sizing is driven by --kc-w so a game can scale a whole table at once. */
+  :root{ --kc-w:62px; --kc-h:88px; --kc-r:8px; }
+  .kcard{ width:var(--kc-w); height:var(--kc-h); border-radius:var(--kc-r); position:relative;
+    perspective:640px; flex:0 0 auto; -webkit-user-select:none; user-select:none; }
+  .kc-inner{ position:absolute; inset:0; transform-style:preserve-3d; transition:transform .42s cubic-bezier(.2,.8,.3,1); }
+  .kcard.up .kc-inner{ transform:rotateY(180deg); }
+  .kc-front,.kc-back{ position:absolute; inset:0; border-radius:var(--kc-r); backface-visibility:hidden;
+    -webkit-backface-visibility:hidden; overflow:hidden; box-shadow:0 4px 10px -4px rgba(46,43,37,.4),0 1px 2px rgba(46,43,37,.18); }
+  .kc-back{ transform:rotateY(0deg); }
+  .kc-front{ transform:rotateY(180deg); background:#fff; border:1px solid #e7e0d0; }
+  /* Face layout: corner index (rank+suit) mirrored top-left / bottom-right + a center pip field. */
+  .kc-face{ position:absolute; inset:0; color:#2E2B25; font-family:'Geist',-apple-system,system-ui,sans-serif; }
+  .kc-face.red{ color:#C0392B; }
+  .kc-corner{ position:absolute; display:flex; flex-direction:column; align-items:center; line-height:.92;
+    font-weight:700; font-size:calc(var(--kc-w)*.24); }
+  .kc-corner .kc-suit{ font-size:calc(var(--kc-w)*.2); margin-top:1px; }
+  .kc-tl{ top:5%; left:7%; }
+  .kc-br{ bottom:5%; right:7%; transform:rotate(180deg); }
+  .kc-pips{ position:absolute; inset:16% 16% 16% 16%; }
+  .kc-pip{ position:absolute; transform:translate(-50%,-50%); font-size:calc(var(--kc-w)*.26); line-height:1; }
+  .kc-pip.flip{ transform:translate(-50%,-50%) rotate(180deg); }
+  .kc-center{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+  .kc-center .kc-big{ font-size:calc(var(--kc-w)*.62); font-weight:800; }
+  .kc-court{ position:absolute; inset:12% 12% 12% 12%; border:2px solid currentColor; border-radius:6px; opacity:.9;
+    display:flex; align-items:center; justify-content:center; font-size:calc(var(--kc-w)*.5); }
+  /* Back — Kiwi clay lattice. */
+  .kc-back{ background:
+      repeating-linear-gradient(45deg,#C26343 0 6px,#D97757 6px 12px);
+    border:1px solid #A94E33; }
+  .kc-back::after{ content:''; position:absolute; inset:5px; border-radius:5px; border:1.5px solid rgba(255,255,255,.55);
+    background:radial-gradient(circle at 50% 50%, rgba(255,255,255,.16), transparent 62%); }
+  /* Deal-in + place feedback. */
+  @keyframes kc-deal{ from{ opacity:0; transform:translateY(-18px) scale(.9) rotate(-4deg); } to{ opacity:1; transform:none; } }
+  .kcard.kc-dealing{ animation:kc-deal .34s cubic-bezier(.2,.8,.3,1.05) both; }
+  @keyframes kc-pop{ 0%{ transform:scale(1);} 45%{ transform:scale(1.08);} 100%{ transform:scale(1);} }
+  .kcard.kc-pop{ animation:kc-pop .3s ease-out; }
+  .kc-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; }
+  .kc-fan{ display:flex; }
+  .kc-fan .kcard:not(:first-child){ margin-left:calc(var(--kc-w)*-.42); }
+  @media (prefers-reduced-motion:reduce){ .kc-inner{transition:none} .kcard.kc-dealing,.kcard.kc-pop{animation:none} }
+  :root[data-kiwi-theme="dark"] .kc-front{ background:#F4EFE6; }
+</style><script>
+window.KCard=(function(){
+  var GLYPH={S:'\u2660',H:'\u2665',D:'\u2666',C:'\u2663'};
+  var LET={'\u2660':'S','\u2665':'H','\u2666':'D','\u2663':'C'};
+  function parse(card){
+    if(card&&card.r!==undefined){ var s=card.s; s=LET[s]||String(s).toUpperCase(); return {r:String(card.r).toUpperCase(),s:s}; }
+    var str=String(card); var s2=str.slice(-1); var r=str.slice(0,str.length-1); s2=LET[s2]||s2.toUpperCase();
+    return {r:r.toUpperCase(),s:s2};
+  }
+  function isRed(s){ return s==='H'||s==='D'; }
+  // Pip coordinate maps (percent within the .kc-pips box). Row y and column x; 'f' marks a flipped pip.
+  var COLS={L:20,M:50,R:80};
+  function P(x,y,f){ return {x:x,y:y,f:!!f}; }
+  var PIPS={
+    '2':[P(50,8),P(50,92,1)],
+    '3':[P(50,8),P(50,50),P(50,92,1)],
+    '4':[P(20,10),P(80,10),P(20,90,1),P(80,90,1)],
+    '5':[P(20,10),P(80,10),P(50,50),P(20,90,1),P(80,90,1)],
+    '6':[P(20,10),P(80,10),P(20,50),P(80,50),P(20,90,1),P(80,90,1)],
+    '7':[P(20,10),P(80,10),P(50,30),P(20,50),P(80,50),P(20,90,1),P(80,90,1)],
+    '8':[P(20,10),P(80,10),P(50,30),P(20,50),P(80,50),P(50,70,1),P(20,90,1),P(80,90,1)],
+    '9':[P(20,8),P(80,8),P(20,36),P(80,36),P(50,50),P(20,64,1),P(80,64,1),P(20,92,1),P(80,92,1)],
+    '10':[P(20,8),P(80,8),P(50,22),P(20,36),P(80,36),P(20,64,1),P(80,64,1),P(50,78,1),P(20,92,1),P(80,92,1)]
+  };
+  function rankLabel(r){ if(r==='1')return 'A'; return r; }
+  function faceHTML(rank,suit){
+    var p=parse({r:rank,s:suit}); var r=rankLabel(p.r); var g=GLYPH[p.s]||p.s; var red=isRed(p.s);
+    var corner='<div class="kc-corner kc-tl"><span>'+r+'</span><span class="kc-suit">'+g+'</span></div>'+
+               '<div class="kc-corner kc-br"><span>'+r+'</span><span class="kc-suit">'+g+'</span></div>';
+    // Center: a single large glyph. Number cards show the big suit; face cards (J/Q/K) show a big
+    // rank letter over a small suit — clean corner index + big center letter, no bordered court
+    // box (the border looked cheap/unprofessional).
+    var center='';
+    if(r==='J'||r==='Q'||r==='K'){ center='<div class="kc-center" style="flex-direction:column;gap:2%"><span class="kc-big">'+r+'</span><span style="font-size:calc(var(--kc-w)*.26);line-height:1">'+g+'</span></div>'; }
+    else { center='<div class="kc-center"><span class="kc-big">'+g+'</span></div>'; }
+    return '<div class="kc-face'+(red?' red':'')+'">'+corner+center+'</div>';
+  }
+  function backHTML(){ return ''; }
+  function make(card,faceUp){
+    var el=document.createElement('div'); el.className='kcard'+(faceUp?' up':'');
+    var p=parse(card);
+    el.innerHTML='<div class="kc-inner"><div class="kc-back"></div><div class="kc-front">'+faceHTML(p.r,GLYPH[p.s])+'</div></div>';
+    el.dataset.card=p.r+p.s;
+    return el;
+  }
+  function flip(el,up){ if(!el)return; el.classList.toggle('up',up!==false); }
+  function deal(el,i){ if(!el)return; el.style.animationDelay=((i||0)*70)+'ms'; el.classList.add('kc-dealing');
+    el.addEventListener('animationend',function(){ el.classList.remove('kc-dealing'); el.style.animationDelay=''; },{once:true}); }
+  function pop(el){ if(!el)return; el.classList.remove('kc-pop'); void el.offsetWidth; el.classList.add('kc-pop'); }
+  return { parse:parse, face:faceHTML, back:backHTML, make:make, flip:flip, deal:deal, pop:pop, glyph:GLYPH };
+})();
+</script><style>
+    .hl-table{--kc-w:96px;--kc-h:136px;display:flex;align-items:center;justify-content:center;gap:22px;min-height:160px}
+    .hl-pile{width:var(--kc-w);height:var(--kc-h);position:relative;flex:0 0 auto}
+    .hl-pile .kcard{position:absolute;top:0;left:0}
+    .hl-lbl{position:absolute;bottom:-22px;left:0;right:0;text-align:center;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+    .hl-empty{position:absolute;inset:0;border:2px dashed var(--line);border-radius:var(--kc-r);opacity:.6}
+    .hl-stage{width:var(--kc-w);height:var(--kc-h);position:relative;flex:0 0 auto}
+    .hl-stage .kcard{position:absolute;top:0;left:0}
+    .hl-out{transition:transform .3s cubic-bezier(.3,.7,.3,1),opacity .3s;transform:translateX(92px) rotate(9deg);opacity:.55}
+    @keyframes hl-shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}40%{transform:translateX(7px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+    .kcard.hl-wrong{animation:hl-shake .42s ease-in-out}
+    .kcard.hl-wrong .kc-front{box-shadow:0 0 0 3px rgba(192,57,43,.92),0 4px 10px -4px rgba(46,43,37,.4)}
+    .kcard.hl-right .kc-front{box-shadow:0 0 0 3px rgba(111,154,78,.92),0 4px 10px -4px rgba(46,43,37,.4)}
+    .hl-chips{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:34px}
+    .hl-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:999px;background:var(--clay-d);color:#fff;font-weight:800;font-size:12.5px;letter-spacing:.02em}
+    .hl-chip.alt{background:var(--chip);color:var(--clay-d)}
+    .hl-odds{margin-top:16px;text-align:center;font-size:12.5px;color:var(--muted);min-height:34px;line-height:1.5}
+    .hl-odds b{color:var(--fg);font-weight:700}
+    .hl-odds .pay{color:var(--clay-d);font-weight:700}
+    .hl-controls{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:16px}
+    .hl-controls button{min-width:120px;min-height:52px;font-size:16px;touch-action:manipulation}
+    .hl-controls #done{min-width:150px}
+    @media (prefers-reduced-motion:reduce){.hl-out{transition:none}.kcard.hl-wrong,.kcard.hl-right{animation:none}}
+  </style>
+  <div class="wrap"><div class="k-split">
+  <div class="k-left"><div class="k-label">Quick Play</div><h1 class="k-title">Higher or Lower</h1><div class="k-sub">Guess the next card. Build a streak — one wrong call ends the run · earn <span class="reward">Seeds</span></div><hr class="k-hud-rule"><div id="kbigscore" class="k-bigscore" style="display:none"><span id="kbs-now" class="k-bigscore-n">0</span><span id="kbs-hi" class="k-bigscore-hi"></span></div>
+  <div id="status" class="k-sub" style="margin-top:8px">Higher or lower than this card?</div>
+  </div>
+  <div class="k-right"><div style="display:flex;flex-direction:column;align-items:center">
+    <div class="hl-table">
+      <div class="hl-pile" id="deck"><div class="hl-lbl">Deck</div></div>
+      <div class="hl-stage" id="stage"></div>
+      <div class="hl-pile" id="discard"><div class="hl-empty"></div><div class="hl-lbl">Discard</div></div>
+    </div>
+    <div class="hl-chips">
+      <div class="hl-chip">Streak <span id="chipn">0</span></div>
+      <div class="hl-chip alt">Best <span id="chipb">0</span></div>
+    </div>
+    <div class="hl-odds" id="odds"></div>
+    <div class="hl-controls">
+      <button id="hi" class="k-press">Higher</button>
+      <button id="lo" class="k-press">Lower</button>
+      <button id="done" class="k-earnbtn k-press" disabled>Claim Seeds</button>
+      <button id="again" class="k-press" style="display:none">Play again</button>
+    </div>
+  </div></div>
+  </div>
+  <script>
+    var RW_SEEDS=10;
+    var statusEl=document.getElementById('status'),oddsEl=document.getElementById('odds');
+    var stage=document.getElementById('stage'),deck=document.getElementById('deck'),discard=document.getElementById('discard');
+    var chipn=document.getElementById('chipn'),chipb=document.getElementById('chipb');
+    var hiB=document.getElementById('hi'),loB=document.getElementById('lo'),done=document.getElementById('done'),againB=document.getElementById('again');
+    var RANKS=['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+    var SUIT_L=['S','H','D','C'];
+    var pile=[],cur,streak=0,score=0,best=0,alive=false,curEl,curCounts,recorded=false;
+    try{best=parseInt(localStorage.getItem('kiwi.higher.best')||'0',10)||0;}catch(e){}
+    function saveBest(){if(streak>best){best=streak;try{localStorage.setItem('kiwi.higher.best',String(best));}catch(e){}}}
+    function newDeck(){var d=[];for(var s=0;s<4;s++){for(var i=0;i<13;i++){d.push({r:RANKS[i],s:SUIT_L[s],v:i+2});}}for(var j=d.length-1;j>0;j--){var k=Math.floor(Math.random()*(j+1));var t=d[j];d[j]=d[k];d[k]=t;}return d;}
+    function draw(){if(!pile.length){pile=newDeck();}return pile.pop();}
+    function counts(v){var hi=0,lo=0,eq=0;for(var i=0;i<pile.length;i++){var cv=pile[i].v;if(cv>v)hi++;else if(cv<v)lo++;else eq++;}return {hi:hi,lo:lo,eq:eq};}
+    // Payout preview: safe calls pay ~5, risky correct calls pay up to ~25 (more cards were against you).
+    function payout(hi,c){var dec=c.hi+c.lo;var against=hi?c.lo:c.hi;var risk=dec?against/dec:0;return 5+Math.round(20*risk);}
+    function chips(){chipn.textContent=streak;chipb.textContent=best;}
+    function showOdds(){
+      if(!alive){return;}
+      var c=curCounts;var tot=c.hi+c.lo+c.eq;
+      var pH=payout(true,c),pL=payout(false,c);
+      oddsEl.innerHTML='<b>'+c.hi+'</b> higher &middot; <b>'+c.lo+'</b> lower'+(c.eq?(' &middot; <b>'+c.eq+'</b> tie'):'')+' left in the deck<br>'+
+        'Higher pays <span class="pay">~'+pH+'</span> &middot; Lower pays <span class="pay">~'+pL+'</span>';
+    }
+    function fillDeck(){deck.innerHTML='';for(var i=0;i<3;i++){var b=KCard.make({r:'A',s:'S'},false);b.style.left=(i*3)+'px';b.style.top=(i*-3)+'px';deck.appendChild(b);}var l=document.createElement('div');l.className='hl-lbl';l.textContent='Deck';deck.appendChild(l);}
+    function toDiscard(el){if(!el)return;el.classList.add('hl-out');setTimeout(function(){var slots=discard.querySelectorAll('.kcard');for(var i=0;i<slots.length;i++)discard.removeChild(slots[i]);el.classList.remove('hl-out','hl-right','hl-wrong');el.style.left='0px';el.style.top='0px';discard.insertBefore(el,discard.firstChild);},300);}
+    function placeCurrent(){curEl=KCard.make({r:cur.r,s:cur.s},true);stage.appendChild(curEl);KCard.deal(curEl,0);curCounts=counts(cur.v);}
+    function endButtons(){hiB.disabled=true;loB.disabled=true;done.disabled=true;done.classList.remove('k-earn-ready');againB.style.display='';}
+    function record(){if(recorded)return;recorded=true;kiwiComplete(RW_SEEDS, score, true);}
+    function guess(hi){
+      if(!alive)return;
+      var c=curCounts;
+      var base=payout(hi,c);
+      var nx=draw();
+      var win=hi?(nx.v>cur.v):(nx.v<cur.v);
+      var tie=(nx.v===cur.v);
+      toDiscard(curEl);
+      var el=KCard.make({r:nx.r,s:nx.s},false);
+      stage.appendChild(el);curEl=el;KCard.deal(el,0);
+      setTimeout(function(){KCard.flip(el,true);},210);
+      var prev=cur;cur=nx;curCounts=counts(cur.v);
+      if(tie){
+        // A tie is neither higher nor lower — it pushes: the streak survives, no points, play on.
+        setTimeout(function(){KCard.pop(el);},240);
+        statusEl.textContent='Push — another '+prev.r+'. Streak holds at '+streak+'.';
+        showOdds();
+        return;
+      }
+      if(win){
+        var gain=Math.round(base*(1+streak*0.15));
+        score+=gain;streak++;saveBest();chips();
+        if(window.kScore)kScore(score);
+        setTimeout(function(){el.classList.add('hl-right');KCard.pop(el);},240);
+        statusEl.innerHTML='Right! <span class="k-win">+'+gain+'</span> &mdash; streak '+streak+' &middot; score '+score;
+        if(streak>=3&&done.disabled){done.disabled=false;done.classList.add('k-earn-ready');}
+        showOdds();
+      } else {
+        alive=false;saveBest();chips();
+        setTimeout(function(){el.classList.add('hl-wrong');KCard.pop(el);},240);
+        statusEl.innerHTML='<span class="k-lose">Wrong.</span> Run ended at streak '+streak+' &middot; score '+score+'. Best streak '+best+'.';
+        oddsEl.textContent='';
+        endButtons();
+        record();
+      }
+    }
+    function start(){
+      pile=newDeck();cur=draw();streak=0;score=0;alive=true;
+      stage.innerHTML='';discard.innerHTML='<div class="hl-empty"></div><div class="hl-lbl">Discard</div>';
+      fillDeck();placeCurrent();chips();
+      hiB.disabled=false;loB.disabled=false;done.disabled=true;done.classList.remove('k-earn-ready');againB.style.display='none';
+      statusEl.textContent='Higher or lower than this card?';
+      if(window.kScore)kScore(score);
+      showOdds();
+    }
+    hiB.addEventListener('click',function(){guess(true);});
+    loB.addEventListener('click',function(){guess(false);});
+    done.addEventListener('click',function(){if(done.disabled)return;alive=false;endButtons();record();statusEl.innerHTML='<span class="k-win">Claimed.</span> Banked score '+score+' &middot; best streak '+best+'.';oddsEl.textContent='';});
+    againB.addEventListener('click',start);
+    start();
+  </script>
+</div><!--KHELP--><style>
+  .kh-btn{position:fixed;top:12px;right:14px;z-index:60;display:inline-flex;align-items:center;gap:6px;
+    background:var(--card);color:var(--clay-d);border:1.5px solid var(--line);border-radius:999px;
+    padding:6px 13px;font-family:var(--sans);font-weight:600;font-size:12.5px;cursor:pointer;
+    box-shadow:0 6px 16px -10px rgba(46,43,37,.5);transition:border-color .12s,background .12s}
+  .kh-btn:hover{border-color:var(--clay);background:var(--tint)}
+  .kh-btn b{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;
+    background:var(--clay);color:#fff;font-size:11px;font-weight:700}
+  .kh-overlay{position:fixed;inset:0;z-index:70;display:none;align-items:center;justify-content:center;
+    padding:22px;background:rgba(30,27,22,.44);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+  .kh-overlay.kh-open{display:flex;animation:khfade .18s ease-out}
+  @keyframes khfade{from{opacity:0}to{opacity:1}}
+  .kh-card{width:100%;max-width:440px;max-height:88vh;overflow-y:auto;background:var(--card);color:var(--fg);
+    border:1px solid var(--line);border-radius:20px;padding:24px 26px;
+    box-shadow:0 30px 60px -24px rgba(46,43,37,.6);animation:khrise .22s cubic-bezier(.2,.9,.3,1.1)}
+  @keyframes khrise{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+  .kh-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .kh-title{font-family:var(--display);font-weight:600;font-size:24px;line-height:1.15;margin:0}
+  .kh-x{flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:var(--chip);color:var(--muted);border:0;border-radius:9px;width:30px;height:30px;
+    font-size:15px;cursor:pointer;line-height:1;padding:0;text-align:center}
+  .kh-x:hover{color:var(--fg)}
+  .kh-goal{color:var(--fg);font-size:14.5px;margin:10px 0 2px}
+  .kh-sec{margin-top:16px}
+  .kh-h{font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--clay-d);margin-bottom:7px}
+  .kh-steps{margin:0;padding-left:0;list-style:none;counter-reset:kh}
+  .kh-steps li{counter-increment:kh;position:relative;padding-left:30px;margin-bottom:9px;font-size:14px;line-height:1.45}
+  .kh-steps li::before{content:counter(kh);position:absolute;left:0;top:0;width:21px;height:21px;border-radius:50%;
+    background:var(--tint);color:var(--clay-d);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .kh-controls{font-size:14px;margin:0;color:var(--fg)}
+  .kh-sec p{font-size:14px;line-height:1.45;margin:0}
+  .kh-tip{background:var(--chip);border-radius:12px;padding:12px 14px}
+  .kh-tip .kh-h{color:var(--green2)}
+  .kh-earn{background:var(--tint);border-radius:12px;padding:12px 14px}
+  .kh-go{margin-top:20px;width:100%;background:var(--clay);color:var(--gtext);border:0;border-radius:13px;
+    padding:13px;font-family:var(--sans);font-weight:600;font-size:15px;cursor:pointer}
+  .kh-go:hover{background:var(--clay-d)}
+  @media (max-height:520px){ .kh-title{font-size:20px} .kh-card{padding:18px 20px} }
+</style>
+<button class="kh-btn k-press" id="kh-open" aria-label="How to play"><b>?</b>How to play</button>
+<div class="kh-overlay" id="kh-overlay" role="dialog" aria-modal="true" aria-labelledby="kh-title">
+  <div class="kh-card">
+    <div class="kh-top"><h2 class="kh-title" id="kh-title">Higher or Lower</h2><button class="kh-x" id="kh-close" aria-label="Close">✕</button></div>
+    <p class="kh-goal">Build the longest streak by guessing whether the next card is higher or lower.</p>
+    <div class="kh-sec"><div class="kh-h">How to play</div><ol class="kh-steps"><li>A card is shown. Guess whether the next one will be higher or lower.</li><li>A correct call extends your streak and adds points; a wrong call ends the run.</li><li>The deck shows how many cards are higher vs lower — riskier correct calls pay more.</li><li>A tie (same rank) is a push: your streak survives.</li></ol></div>
+    <div class="kh-sec"><div class="kh-h">Controls</div><p class="kh-controls">Click Higher or Lower · Claim to bank once your streak reaches 3</p></div>
+    <div class="kh-sec kh-earn"><div class="kh-h">How you earn</div><p>Reach a streak of 3 to unlock Claim, or your run is banked automatically when it ends.</p></div>
+    <div class="kh-sec kh-tip"><div class="kh-h">Tip</div><p>Watch the counts: calling higher on a low card is nearly free points, while betting against a stacked deck pays big when it lands.</p></div>
+    <button class="kh-go" id="kh-got">Got it — let's play</button>
+  </div>
+</div>
+<script>
+  (function(){
+    var ov=document.getElementById('kh-overlay');
+    function open(){ ov.classList.add('kh-open'); }
+    function close(){ ov.classList.remove('kh-open'); try{ localStorage.setItem("kiwi.help.seen.Higher_or_Lower",'1'); }catch(e){} }
+    document.getElementById('kh-open').addEventListener('click',open);
+    document.getElementById('kh-close').addEventListener('click',close);
+    document.getElementById('kh-got').addEventListener('click',close);
+    ov.addEventListener('click',function(e){ if(e.target===ov){ close(); } });
+    document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&ov.classList.contains('kh-open')){ close(); } });
+    // Never auto-open: players land straight in the game and open the rules themselves
+    // via the "How to play" button if they want them.
+  })();
+</script><!--/KHELP--></body></html>

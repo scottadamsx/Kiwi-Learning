@@ -6,12 +6,15 @@ import type { GradeResult, McqPayload, OpenPayload, QuizItem } from "./types";
 
 // The understanding-based grading engine. Free-text answers are graded against
 // the reference answer + decomposed key ideas (partial credit per idea), with
-// misconception detection and formative feedback. The grade is sampled N times
-// independently; disagreement flags the grade as low-confidence rather than
-// presenting it as final. Every grade is formative — the rubric breakdown is
-// always shown to the learner.
+// misconception detection and formative feedback.
+//
+// Adaptive sampling (token efficiency): grade once first. A decisive score
+// (0 or 5) is accepted as-is; a borderline score triggers additional
+// independent samples, and disagreement flags the grade as low-confidence
+// rather than presenting it as final. Every grade is formative — the rubric
+// breakdown is always shown to the learner.
 
-const SAMPLES = Math.max(1, Number(process.env.KIWI_GRADER_SAMPLES ?? 3));
+const MAX_SAMPLES = Math.max(1, Number(process.env.KIWI_GRADER_SAMPLES ?? 3));
 
 interface GraderOutput {
   key_idea_coverage: { idea: string; covered: boolean; evidence: string }[];
@@ -55,8 +58,8 @@ export async function gradeOpenAnswer(
   studentAnswer: string
 ): Promise<GradeResult> {
   const payload = item.payload as OpenPayload;
-  const sources = chunksForSection(item.notebook_id, item.section_id, 3)
-    .map((c) => c.text.slice(0, 1000))
+  const sources = chunksForSection(item.notebook_id, item.section_id, 2)
+    .map((c) => c.text.slice(0, 900))
     .join("\n---\n");
 
   const prompt = `Grade this student answer on UNDERSTANDING, not string matching.
@@ -83,18 +86,27 @@ Grade it:
 - feedback: 2-4 sentences of specific, formative feedback — name what they nailed, what they missed, and any mix-up you spotted. Address the student directly.
 - Before finalizing, verify every claim in your feedback against the source material; do not invent errors.`;
 
-  // Sample the grade independently; disagreement is an uncertainty signal.
-  const samples = await Promise.all(
-    Array.from({ length: SAMPLES }, () =>
-      generateJson<GraderOutput>({
-        system:
-          "You are a rigorous, fair grader for a personal study tool. Grades are formative first-pass estimates, never a final authority.",
-        prompt,
-        schema: GRADER_SCHEMA,
-        maxTokens: 4000,
-      })
-    )
-  );
+  const gradeOnce = () =>
+    generateJson<GraderOutput>({
+      system:
+        "You are a rigorous, fair grader for a personal study tool. Grades are formative first-pass estimates, never a final authority.",
+      prompt,
+      schema: GRADER_SCHEMA,
+      maxTokens: 4000,
+      tier: "fast",
+      effort: "medium",
+      task: "grading",
+    });
+
+  // Adaptive sampling: one grade first; decisive extremes (0 or 5) stand
+  // alone, borderline scores get independent second opinions.
+  const samples: GraderOutput[] = [await gradeOnce()];
+  const first = Math.max(0, Math.min(5, samples[0].score_0_to_5));
+  if (MAX_SAMPLES > 1 && first !== 0 && first !== 5) {
+    samples.push(
+      ...(await Promise.all(Array.from({ length: MAX_SAMPLES - 1 }, gradeOnce)))
+    );
+  }
 
   const scores = samples.map((s) => Math.max(0, Math.min(5, s.score_0_to_5)));
   const med = median(scores);

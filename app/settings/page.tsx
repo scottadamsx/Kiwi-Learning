@@ -3,16 +3,33 @@
 import { useEffect, useState } from "react";
 import PageShell from "@/components/PageShell";
 
+interface UsageRow {
+  task: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+  avg_ms: number;
+}
+
 export default function SettingsPage() {
   const [health, setHealth] = useState<{
     provider: "api" | "claude-code" | "none";
     model: string;
+  } | null>(null);
+  const [usage, setUsage] = useState<{
+    by_task: UsageRow[];
+    totals: { calls: number; input_tokens: number; output_tokens: number; cost_usd: number | null };
   } | null>(null);
 
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
       .then(setHealth)
+      .catch(() => {});
+    fetch("/api/usage")
+      .then((r) => r.json())
+      .then(setUsage)
       .catch(() => {});
   }, []);
 
@@ -55,13 +72,63 @@ export default function SettingsPage() {
           </p>
         </SettingCard>
 
+        <SettingCard title="Model tiers">
+          <p className="text-sm text-ink-soft">
+            Kiwi routes each job to the right brain: <strong>plan</strong> (outline mapping,
+            assignment tutoring — Fable on Claude Code), <strong>content</strong> (lessons,
+            cards, quizzes), and <strong>fast</strong> (grading, chat — Sonnet). Override with{" "}
+            <code className="rounded bg-stone-100 px-1">KIWI_MODEL_PLAN</code>,{" "}
+            <code className="rounded bg-stone-100 px-1">KIWI_MODEL_CONTENT</code>,{" "}
+            <code className="rounded bg-stone-100 px-1">KIWI_MODEL_FAST</code>.
+          </p>
+        </SettingCard>
+
+        <SettingCard title="Engine usage">
+          {usage === null ? (
+            <p className="animate-kiwi-pulse text-sm text-ink-soft">Loading…</p>
+          ) : usage.totals.calls === 0 ? (
+            <p className="text-sm text-ink-soft">No generation calls logged yet.</p>
+          ) : (
+            <div className="text-sm">
+              <p className="mb-2 text-ink-soft">
+                {usage.totals.calls} calls ·{" "}
+                {((usage.totals.input_tokens + usage.totals.output_tokens) / 1000).toFixed(0)}k
+                tokens total
+                {usage.totals.cost_usd ? ` · ~$${usage.totals.cost_usd.toFixed(2)}` : ""}
+              </p>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-ink-soft">
+                    <th className="py-1 pr-2 font-semibold">Task</th>
+                    <th className="py-1 pr-2 font-semibold">Calls</th>
+                    <th className="py-1 pr-2 font-semibold">In</th>
+                    <th className="py-1 pr-2 font-semibold">Out</th>
+                    <th className="py-1 font-semibold">Avg time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usage.by_task.map((r) => (
+                    <tr key={r.task} className="border-t border-line">
+                      <td className="py-1 pr-2 font-medium">{r.task}</td>
+                      <td className="py-1 pr-2 tabular-nums">{r.calls}</td>
+                      <td className="py-1 pr-2 tabular-nums">{(r.input_tokens / 1000).toFixed(1)}k</td>
+                      <td className="py-1 pr-2 tabular-nums">{(r.output_tokens / 1000).toFixed(1)}k</td>
+                      <td className="py-1 tabular-nums">{(r.avg_ms / 1000).toFixed(1)}s</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SettingCard>
+
         <SettingCard title="Grading rigor">
           <p className="text-sm text-ink-soft">
-            Free-text answers are graded{" "}
-            <code className="rounded bg-stone-100 px-1">KIWI_GRADER_SAMPLES</code> times
-            independently (default 3). When the samples disagree, the grade is flagged
-            low-confidence instead of being presented as final. Lower it to 1 for cheaper, less
-            calibrated grading.
+            Free-text answers are graded adaptively: one grading pass first; decisive scores
+            stand alone, borderline scores get up to{" "}
+            <code className="rounded bg-stone-100 px-1">KIWI_GRADER_SAMPLES</code> (default 3)
+            independent opinions, and disagreement is flagged as a low-confidence grade instead
+            of being presented as final. Set it to 1 for single-pass grading.
           </p>
         </SettingCard>
 

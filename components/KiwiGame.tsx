@@ -1,179 +1,133 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import GAMES from "@/lib/games-manifest.json";
 
-// Kiwi Games — Word Break. A pocket word game shown while the engine is
-// generating (lessons, quizzes), same game family as Kiwi IDE's engage
-// content. Guess the 5-letter word in 6 tries.
+// Kiwi Games — the full 88-game arcade, playable while the engine generates.
+// Each game is a self-contained page under /kiwi-games/g/<id>.html rendered in
+// a sandboxed iframe. The game draws at its natural size and we scale it to
+// fill whatever width the panel gives us (never past 1:1, so it stays crisp).
 
-const POOL = [
-  "brain", "study", "learn", "smart", "focus", "think", "chart", "grade",
-  "notes", "logic", "mango", "kiwis", "fruit", "plant", "green", "paper",
-  "essay", "tutor", "score", "recap", "prime", "atoms", "cells", "graph",
-  "angle", "ratio", "solve", "prove", "quill", "index",
-];
-
-type LetterState = "hit" | "near" | "miss";
-
-function scoreGuess(guess: string, answer: string): LetterState[] {
-  const result: LetterState[] = Array(5).fill("miss");
-  const remaining: Record<string, number> = {};
-  for (let i = 0; i < 5; i++) {
-    if (guess[i] === answer[i]) result[i] = "hit";
-    else remaining[answer[i]] = (remaining[answer[i]] ?? 0) + 1;
-  }
-  for (let i = 0; i < 5; i++) {
-    if (result[i] === "hit") continue;
-    if (remaining[guess[i]] > 0) {
-      result[i] = "near";
-      remaining[guess[i]] -= 1;
-    }
-  }
-  return result;
+interface GameMeta {
+  id: string;
+  title: string;
+  rule: string;
 }
 
-const TILE: Record<LetterState, string> = {
-  hit: "bg-kiwi-500 border-kiwi-500 text-white",
-  near: "bg-amber-400 border-amber-400 text-white",
-  miss: "bg-stone-300 border-stone-300 text-white",
-};
+const ALL = GAMES as GameMeta[];
+
+// Local 2-player games need a second human — skip them when you're waiting alone.
+const TWO_PLAYER = new Set(["duelpong", "cycleduel", "tankduel", "sumo", "twokiwis", "hunterprey"]);
+const SOLO = ALL.filter((g) => !TWO_PLAYER.has(g.id));
+
+// The arcade pages are laid out for roughly this canvas.
+const NATURAL_W = 980;
+const NATURAL_H = 700;
 
 export default function KiwiGame() {
-  const [answer, setAnswer] = useState(() => POOL[Math.floor(Math.random() * POOL.length)]);
-  const [guesses, setGuesses] = useState<string[]>([]);
-  const [current, setCurrent] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
+  const [game, setGame] = useState<GameMeta | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [nonce, setNonce] = useState(0);
+  const [scale, setScale] = useState(1);
+  const shellRef = useRef<HTMLDivElement>(null);
 
-  const won = guesses.includes(answer);
-  const lost = !won && guesses.length >= 6;
-
-  const reset = useCallback(() => {
-    setAnswer(POOL[Math.floor(Math.random() * POOL.length)]);
-    setGuesses([]);
-    setCurrent("");
-    setMessage(null);
+  // Pick client-side only — a random choice during render breaks hydration.
+  useEffect(() => {
+    setGame((g) => g ?? SOLO[Math.floor(Math.random() * SOLO.length)]);
   }, []);
 
-  const submit = useCallback(() => {
-    if (current.length !== 5) {
-      setMessage("5 letters needed");
-      return;
-    }
-    setGuesses((g) => [...g, current]);
-    setCurrent("");
-    setMessage(null);
-  }, [current]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (won || lost) return;
-      if (e.key === "Enter") submit();
-      else if (e.key === "Backspace") setCurrent((c) => c.slice(0, -1));
-      else if (/^[a-zA-Z]$/.test(e.key)) setCurrent((c) => (c + e.key.toLowerCase()).slice(0, 5));
+  // Fit the game to the panel: scale to the available width, capped at 1:1.
+  useLayoutEffect(() => {
+    const el = shellRef.current;
+    if (!el) return;
+    const fit = () => {
+      const w = el.clientWidth;
+      if (w > 0) setScale(Math.min(1, w / NATURAL_W));
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [submit, won, lost]);
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [game]);
 
-  const keyStates = useMemo(() => {
-    const map = new Map<string, LetterState>();
-    for (const g of guesses) {
-      const score = scoreGuess(g, answer);
-      g.split("").forEach((ch, i) => {
-        const prev = map.get(ch);
-        const next = score[i];
-        if (prev === "hit") return;
-        if (prev === "near" && next === "miss") return;
-        map.set(ch, next);
-      });
-    }
-    return map;
-  }, [guesses, answer]);
-
-  const rows = [...guesses];
-  if (!won && rows.length < 6) rows.push(current.padEnd(5, " "));
-  while (rows.length < 6) rows.push("     ");
+  const shuffle = useCallback(() => {
+    setGame((current) => {
+      const pool = SOLO.filter((g) => g.id !== current?.id);
+      return pool[Math.floor(Math.random() * pool.length)];
+    });
+    setNonce((n) => n + 1);
+    setPicking(false);
+  }, []);
 
   return (
-    <div className="mx-auto w-fit rounded-2xl border border-line bg-white p-5 text-center select-none">
-      <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-kiwi-600">
-        🥝 Kiwi Games · Word Break
-      </p>
-      <p className="mb-3 text-xs text-ink-soft">Guess the 5-letter word while you wait</p>
+    <div
+      ref={shellRef}
+      className="mx-auto w-full max-w-[980px] overflow-hidden rounded-2xl border border-line bg-white"
+    >
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-kiwi-600">
+          🥝 Kiwi Games
+        </span>
+        <span className="shrink-0 text-sm font-semibold">{game?.title ?? "…"}</span>
+        <span className="hidden truncate text-xs text-ink-soft md:block">{game?.rule}</span>
 
-      <div className="space-y-1">
-        {rows.map((row, ri) => {
-          const scored = ri < guesses.length ? scoreGuess(guesses[ri], answer) : null;
-          return (
-            <div key={ri} className="flex justify-center gap-1">
-              {row.split("").map((ch, ci) => (
-                <div
-                  key={ci}
-                  className={`flex h-9 w-9 items-center justify-center rounded-md border text-sm font-bold uppercase ${
-                    scored ? TILE[scored[ci]] : ch !== " " ? "border-kiwi-300 bg-kiwi-50" : "border-line bg-white"
-                  }`}
-                >
-                  {ch.trim()}
-                </div>
-              ))}
-            </div>
-          );
-        })}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <button
+            onClick={() => setPicking((p) => !p)}
+            className="rounded-lg px-2.5 py-1 text-xs font-semibold text-ink-soft hover:bg-stone-100"
+          >
+            {ALL.length} games ▾
+          </button>
+          <button
+            onClick={shuffle}
+            className="rounded-lg bg-kiwi-600 px-3 py-1 text-xs font-semibold text-white hover:bg-kiwi-700"
+          >
+            🎲 Shuffle
+          </button>
+        </div>
       </div>
 
-      {message && <p className="mt-2 text-xs text-amber-700">{message}</p>}
-      {won && <p className="mt-2 text-sm font-semibold text-kiwi-700">Got it! 🎉</p>}
-      {lost && (
-        <p className="mt-2 text-sm text-ink-soft">
-          It was <span className="font-bold uppercase">{answer}</span>
-        </p>
-      )}
-
-      {won || lost ? (
-        <button
-          onClick={reset}
-          className="mt-2 rounded-lg bg-kiwi-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-kiwi-700"
-        >
-          Play again
-        </button>
-      ) : (
-        <div className="mt-3 space-y-1">
-          {["qwertyuiop", "asdfghjkl", "zxcvbnm"].map((rowKeys, i) => (
-            <div key={i} className="flex justify-center gap-0.5">
-              {i === 2 && (
-                <button
-                  onClick={submit}
-                  className="rounded bg-kiwi-600 px-1.5 text-[10px] font-bold text-white"
-                >
-                  GO
-                </button>
-              )}
-              {rowKeys.split("").map((k) => {
-                const st = keyStates.get(k);
-                return (
-                  <button
-                    key={k}
-                    onClick={() => setCurrent((c) => (c + k).slice(0, 5))}
-                    className={`h-7 w-6 rounded text-[11px] font-semibold uppercase ${
-                      st ? TILE[st] : "bg-stone-100 hover:bg-stone-200"
-                    }`}
-                  >
-                    {k}
-                  </button>
-                );
-              })}
-              {i === 2 && (
-                <button
-                  onClick={() => setCurrent((c) => c.slice(0, -1))}
-                  className="rounded bg-stone-200 px-1.5 text-[10px] font-bold"
-                >
-                  ⌫
-                </button>
-              )}
-            </div>
-          ))}
+      {picking && (
+        <div className="max-h-52 overflow-y-auto border-b border-line bg-paper p-2">
+          <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
+            {ALL.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => {
+                  setGame(g);
+                  setNonce((n) => n + 1);
+                  setPicking(false);
+                }}
+                title={g.rule}
+                className={`truncate rounded-md px-2 py-1 text-left text-xs hover:bg-kiwi-100 ${
+                  g.id === game?.id ? "bg-kiwi-100 font-semibold text-kiwi-800" : "text-ink-soft"
+                }`}
+              >
+                {g.title}
+              </button>
+            ))}
+          </div>
         </div>
       )}
+
+      {/* Scaled viewport: the iframe renders at natural size, then scales to fit. */}
+      <div style={{ height: NATURAL_H * scale, overflow: "hidden" }}>
+        {game && (
+          <iframe
+            key={`${game.id}-${nonce}`}
+            src={`/kiwi-games/g/${game.id}.html`}
+            title={game.title}
+            sandbox="allow-scripts allow-same-origin"
+            style={{
+              width: NATURAL_W,
+              height: NATURAL_H,
+              border: 0,
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

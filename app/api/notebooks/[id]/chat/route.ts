@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { getClient, MODEL, provider, generateText } from "@/lib/anthropic";
+import { getClient, modelFor, provider, generateText } from "@/lib/anthropic";
 import { searchChunks, formatSources } from "@/lib/retrieval";
 
 // Grounded chat over the notebook's uploads — the NotebookLM core.
@@ -40,13 +40,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const chunks = searchChunks(id, message, 8);
   const { block, sources } = formatSources(chunks);
 
+  // Token efficiency: long past answers get clipped — recent context matters,
+  // full transcripts don't.
   const history = (
     db
       .prepare(
         "SELECT role, content FROM chat_messages WHERE notebook_id = ? ORDER BY id DESC LIMIT 10"
       )
       .all(id) as { role: "user" | "assistant"; content: string }[]
-  ).reverse();
+  )
+    .reverse()
+    .map((h) => ({ ...h, content: h.content.slice(0, 1500) }));
 
   db.prepare("INSERT INTO chat_messages (notebook_id, role, content) VALUES (?, 'user', ?)").run(
     id,
@@ -75,6 +79,8 @@ ${block}`;
           full = await generateText({
             system: systemPrompt,
             prompt: `${transcript ? `Conversation so far:\n${transcript}\n\n` : ""}Student: ${message}`,
+            tier: "fast",
+            task: "chat",
           });
           controller.enqueue(encoder.encode(full));
         } catch (err) {
@@ -94,7 +100,7 @@ ${block}`;
 
   const client = getClient();
   const stream = client.messages.stream({
-    model: MODEL,
+    model: modelFor("fast") ?? "claude-sonnet-4-6",
     max_tokens: 4000,
     system: systemPrompt,
     messages: [

@@ -1,0 +1,796 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+
+<style>
+  /* Paper & clay — a warm, branded surface (independent of editor theme, to match
+     the Kiwi engage mockups). Sage green + gold play supporting roles. */
+  :root{
+    --bg:#FBFAF4; --card:#FFFFFF; --line:#E2DCCC; --fg:#2E2B25; --muted:#8C8676;
+    --clay:#D97757; --clay-d:#C26343; --tint:#F6E9E2; --chip:#F3EFE7;
+    --green:#6F9A4E; --green2:#557F38; --gold:#D9A65C; --gtext:#ffffff;
+    /* Game tile fills (Memory, Minesweeper, 2048, Whack…) — must be visible vs. the bg. */
+    --tile:#E7E0CE; --hover:#EFE9DA;
+    --display:'Newsreader',Georgia,'Times New Roman',serif;
+    --sans:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  /* Fit-to-window: center the activity, never scroll the page itself. */
+  body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--fg);line-height:1.5;
+       overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding:14px 16px;
+       touch-action:manipulation;-webkit-text-size-adjust:100%}
+  /* Mobile fit for EVERY game: tall layouts scroll instead of clipping, align to the top, and pad
+     past the rounded-screen safe area so keyboards/buttons are never cut off at the edges or bottom
+     (the Word Break treatment, made global). Games may still refine this in their own media query. */
+  @media (max-width:640px){
+    html,body{height:auto;min-height:100%}
+    /* Top padding clears the fixed top bar (← All games / Shuffle chip / How to play) so it never
+       overlaps the game's "Quick Play" header — content starts below those buttons. */
+    body{overflow-y:auto;-webkit-overflow-scrolling:touch;justify-content:flex-start;
+         padding:58px 18px calc(26px + env(safe-area-inset-bottom,0px))}
+  }
+  /* Bottom-docked button bar (mobile): the runtime button-mover relocates a game's control row here,
+     below the board, so every game's buttons sit at the bottom on a phone. */
+  .kiwi-btnbar{display:flex;flex-direction:column;gap:10px;align-items:center;width:100%;margin-top:16px}
+  .kiwi-btnbar>div{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;width:100%;margin-top:0}
+  .wrap{width:100%;max-width:1080px;margin:0 auto;display:flex;flex-direction:column;min-height:0}
+  .k-label{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--clay-d)}
+  .k-title,h1{font-family:var(--display);font-weight:500;font-size:30px;line-height:1.12;margin:6px 0 0;color:var(--fg)}
+  .k-sub,.sub{color:var(--muted);font-size:13.5px;margin-top:6px}
+  .reward{color:var(--clay-d);font-weight:600}
+  .sim{display:none}
+  /* Segmented progress (done = green, current = clay, rest = line). */
+  .k-prog{display:flex;gap:6px;margin-bottom:18px}
+  .k-prog>i{flex:1;height:4px;border-radius:999px;background:var(--line)}
+  .k-prog>i.done{background:var(--green)} .k-prog>i.cur{background:var(--clay)}
+  /* Option cards */
+  .k-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px}
+  @media (max-width:520px){ .k-grid{grid-template-columns:1fr} }
+  .k-opt{display:flex;align-items:center;gap:16px;width:100%;text-align:left;cursor:pointer;
+         background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:16px 18px;
+         font-family:var(--display);font-size:21px;color:var(--fg);transition:border-color .12s,background .12s}
+  .k-opt:hover{border-color:#dcd5c6}
+  .k-opt.sel{border-color:var(--clay);background:var(--tint)}
+  .k-opt-ic{flex:0 0 auto;width:44px;height:44px;border-radius:12px;background:var(--chip);
+            display:flex;align-items:center;justify-content:center;font-size:20px}
+  .k-opt.sel .k-opt-ic{background:var(--clay);color:#fff}
+  .k-actions{display:flex;align-items:center;justify-content:space-between;margin-top:24px}
+  .k-hint{color:var(--muted);font-size:13px}
+  .k-primary{background:var(--clay);color:var(--gtext);border:0;border-radius:14px;padding:14px 26px;
+             font-family:var(--sans);font-weight:600;font-size:15px;cursor:pointer;box-shadow:0 8px 20px -10px rgba(201,96,60,.6)}
+  .k-primary:hover{background:var(--clay-d)} .k-primary:disabled{opacity:.5;cursor:default;box-shadow:none}
+  .k-ghost{background:var(--card);color:var(--fg);border:1.5px solid var(--line);border-radius:12px;
+           padding:11px 18px;font-family:var(--sans);font-weight:600;font-size:14px;cursor:pointer}
+  .k-ghost:hover{background:var(--chip)}
+  .center{text-align:center}
+  /* Two centered divs side by side: title/info on the left, the game/video on the right. */
+  .k-split{display:flex;flex-direction:row;align-items:center;justify-content:center;gap:26px;width:100%;flex-wrap:wrap}
+  .k-split>.k-left{flex:0 1 300px;min-width:220px;max-width:340px}
+  .k-split>.k-right{flex:0 0 auto;display:flex;align-items:center;justify-content:center}
+  @media (max-width:600px){ .k-split{gap:22px} .k-split>.k-left{flex:1 1 100%;max-width:none} }
+  /* Game canvases/boards: keep their natural size, centered — don't let the column's
+     align-items:stretch blow them up to full width. Cap so they always fit. */
+  /* Games fill more of the screen: canvases scale UP to the available space (width + max-height,
+     height:auto → aspect ratio preserved). Pointer games map coords through the displayed size,
+     so this is safe. */
+  canvas{align-self:center;width:min(92vw,560px);height:auto;max-height:66vh}
+  #grid,#board,#pads,.gameboard,.adwrap{align-self:center;max-width:100%}
+  /* DOM-based boards (2048, memory, minesweeper, simon…) scale up crisply; children scale with
+     them so clicks stay accurate. */
+  #grid,#board,#pads,.gameboard{zoom:1.22}
+  /* Generic button fallback (older games) — clay pill. */
+  button{background:var(--clay);color:var(--gtext);border:0;border-radius:12px;padding:11px 20px;font-family:var(--sans);font-weight:600;cursor:pointer;font-size:14px}
+  button:hover{background:var(--clay-d)} button:disabled{opacity:.5;cursor:default}
+  p{margin:0 0 12px}
+  .cell,.mc,.ft,.hole,.pad{padding:0!important;line-height:1;font-family:inherit}
+  /* Shake (invalid Word Break key) + score pop (point feedback). */
+  @keyframes kshake{0%,100%{transform:translateX(0)}20%{transform:translateX(-4px)}60%{transform:translateX(4px)}}
+  .shake{animation:kshake .28s}
+  @keyframes kpop{0%{transform:scale(1)}35%{transform:scale(1.22)}100%{transform:scale(1)}}
+  .k-earn{font-weight:700;color:var(--clay-d);display:inline-block}
+  .k-earn.pop,.pop{animation:kpop .35s}
+  .k-win{color:var(--green);font-weight:700} .k-lose{color:var(--clay-d);font-weight:700}
+  /* Big live score for games — large so you can read it at a glance while playing. */
+  .k-bigscore{display:flex;align-items:baseline;gap:12px;margin-top:10px}
+  .k-bigscore-n{font-family:var(--display);font-weight:700;font-size:56px;line-height:1;color:var(--fg);font-variant-numeric:tabular-nums}
+  .k-bigscore-hi{font-size:13px;font-weight:700;letter-spacing:.06em;color:var(--clay-d)}
+  @media (max-height:560px){ .k-bigscore-n{font-size:42px} }
+  /* Tighten for short panels so things still fit without scrolling. */
+  @media (max-height:560px){ body{padding:18px 22px} .k-title,h1{font-size:24px} .k-grid{margin-top:14px;gap:10px} .k-opt{padding:12px 14px;font-size:18px} .k-opt-ic{width:38px;height:38px} .k-actions{margin-top:16px} }
+  @media (max-height:420px){ .k-title,h1{font-size:20px} .k-opt{font-size:16px} }
+  /* --- B13 premium game shell: shared vocabulary every game can adopt --------------------- */
+  /* Stage: the board/canvas frame — a designed paper card, not a floating void. */
+  .k-right{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:14px;
+           box-shadow:0 14px 32px -20px rgba(46,43,37,.38),0 2px 10px -6px rgba(46,43,37,.16)}
+  @media (max-width:600px){ .k-right{padding:14px;border-radius:16px} }
+  /* HUD strip: title / one-line rule / status cluster (score + earn chip) — see gameHead(). */
+  .k-hud-rule{height:1px;border:0;background:var(--line);margin:12px 0 2px}
+  /* Small pill chip (best-tile, pairs-progress, etc.) */
+  .k-chip{display:inline-flex;align-items:center;gap:6px;background:var(--chip);color:var(--clay-d);
+          font-size:11.5px;font-weight:700;letter-spacing:.02em;padding:5px 10px;border-radius:999px}
+  /* Earn button as a chip (clean, no emoji): a small lock glyph when locked, nothing when claimable. */
+  .k-earnbtn::before{content:'\2022';margin-right:7px;font-size:13px;vertical-align:1px;opacity:.55}
+  .k-earnbtn:not(:disabled)::before{content:'';margin-right:0}
+  .k-earnbtn.k-earn-ready{animation:kglowpulse 900ms ease-out}
+  @keyframes kglowpulse{0%{box-shadow:0 0 0 0 rgba(217,119,87,.55)}70%{box-shadow:0 0 0 14px rgba(217,119,87,0)}100%{box-shadow:0 0 0 0 rgba(217,119,87,0)}}
+  /* Press-down feedback for interactive controls. */
+  .k-press{transition:transform .08s ease}
+  .k-press:active{transform:scale(.96)}
+  /* Tile spawn / merge (2048 et al). */
+  @keyframes ktilepop{0%{transform:scale(.55);opacity:.3}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+  .k-tilepop{animation:ktilepop .26s cubic-bezier(.2,.9,.3,1.2)}
+  @keyframes kmergepulse{0%{transform:scale(1)}40%{transform:scale(1.16)}100%{transform:scale(1)}}
+  .k-mergepulse{animation:kmergepulse .22s ease-out}
+  /* Refined shake (mismatch / invalid input) — softer than the legacy .shake. */
+  @keyframes kshakesoft{0%,100%{transform:translateX(0) rotate(0)}25%{transform:translateX(-3px) rotate(-2deg)}75%{transform:translateX(3px) rotate(2deg)}}
+  .k-shake-soft{animation:kshakesoft .4s ease-in-out}
+  /* CPU "thinking" pulse. */
+  @keyframes kthinkdot{0%,100%{opacity:.3;transform:scale(.85)}50%{opacity:1;transform:scale(1.1)}}
+  .k-thinking{animation:kthinkdot 1s ease-in-out infinite}
+  /* Win glow-pulse — a tasteful celebration beat, no confetti libs. */
+  @keyframes kwinglow{0%{box-shadow:0 0 0 0 rgba(111,154,78,.5)}70%{box-shadow:0 0 0 16px rgba(111,154,78,0)}100%{box-shadow:0 0 0 0 rgba(111,154,78,0)}}
+  .k-winglow{animation:kwinglow 1.1s ease-out}
+  /* Progress pips — filled/empty round indicators (best-of trackers, pairs matched, etc.). */
+  .k-pips{display:flex;gap:7px}
+  .k-pip{width:9px;height:9px;border-radius:50%;background:var(--line);transition:background .15s,transform .15s}
+  .k-pip.k-pip-win{background:var(--green)}
+  .k-pip.k-pip-lose{background:var(--clay)}
+  .k-pip.k-pip-draw{background:var(--muted)}
+  /* Floating "+delta" score pop. */
+  @keyframes kfloatup{0%{opacity:0;transform:translateY(4px) scale(.9)}20%{opacity:1;transform:translateY(-2px) scale(1.05)}100%{opacity:0;transform:translateY(-20px) scale(1)}}
+  .k-scoredelta{position:absolute;font-weight:700;color:var(--clay-d);font-size:13px;pointer-events:none;animation:kfloatup .9s ease-out forwards}
+  @media (prefers-reduced-motion:reduce){
+    .k-earnbtn.k-earn-ready,.k-tilepop,.k-mergepulse,.k-shake-soft,.k-thinking,.k-winglow,.k-scoredelta,.shake,.pop{animation:none!important}
+    .k-press:active{transform:none}
+  }
+</style><link rel="stylesheet" href="../assets/kiwi-fonts.css"><title>Chess — Kiwi Games</title><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#6F9A4E"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Kiwi Games"><link rel="apple-touch-icon" href="/icon.svg"><link rel="icon" type="image/svg+xml" href="/icon.svg"><script>if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script><script src="../assets/kiwi-auth-config.js"></script>
+<style id="kiwi-learning-patch">
+  /* Arcade-only chrome: earn/claim buttons and the back-to-gallery link. */
+  .k-earnbtn, #done, a[href*="index.html"] { display: none !important; }
+  body { background: transparent !important; }
+  /* Tighten padding so the game fits a compact embed. */
+  .wrap { padding: 10px !important; }
+</style>
+<script>
+  // Neutralize the arcade's earn/auth layer — Kiwi Learning games are just for fun.
+  window.KiwiAuth = window.KiwiAuth || {};
+  window.KIWI_AUTH_CONFIG = window.KIWI_AUTH_CONFIG || { disabled: true };
+</script>
+</head><body data-dpad="0"><script>
+window.acquireVsCodeApi=function(){var st={};return{postMessage:function(m){try{if(m&&m.type==='complete'){window.__kiwiRecord&&window.__kiwiRecord(m);window.__kiwiWin&&window.__kiwiWin(m);window.__kiwiShuffleNext&&window.__kiwiShuffleNext(m);}}catch(e){}},getState:function(){return st;},setState:function(v){st=v;return v;}};};
+window.__kiwiWin=function(m){var d=document.createElement('div');var s=(m&&m.score!=null)?('  ·  Score '+m.score):'';var e=(window.__kiwiEarned|0);var es=e>0?('  ·  +'+e+' Seeds'):'';d.textContent=((m&&m.won)?'You win!':'Nice game!')+s+es;d.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#2E2B25;color:#fff;font:600 14px Geist,-apple-system,system-ui,sans-serif;padding:12px 20px;border-radius:999px;z-index:99999;box-shadow:0 12px 34px -10px rgba(0,0,0,.5)';document.body.appendChild(d);setTimeout(function(){d.style.transition='opacity .45s';d.style.opacity='0';setTimeout(function(){d.remove();},450);},2600);};
+</script><script>
+  var KIWI_EASY=["rps","war","higher","dice","reaction","whack","oddone","stroop","aim","pig","flyer","simon","lights","memory","tictactoe","fruit","ladder","gridseek","rhythmtaps","typing","colorpick"],KIWI_HARD=["chess","sudokumini","nonogram","sokoban","mastermind","2048","blockcascade","gomoku","reversi","skipbo","unicorns","solitaire","pipes","minesweeper","asteroids","centipede","bullscows","invaders","starblaster","missilecommand","battleship","anagrams","twentyfour","wordle"];
+  function kiwiBase(id){ return KIWI_HARD.indexOf(id)>=0?50:(KIWI_EASY.indexOf(id)>=0?10:25); }
+  function kiwiPoints(rec,id){ return (rec&&rec.plays>0)?kiwiBase(id):0; }
+  window.__kiwiRecord=function(m){
+    try{
+      var gid=(location.pathname.split('/').pop()||'game').replace('.html','');
+      var recs={}; try{ recs=JSON.parse(localStorage.getItem('kiwi.records')||'{}'); }catch(e){}
+      var r=recs[gid]||{best:0,plays:0,wins:0};
+      var prevBest=r.best||0;
+      r.plays=(r.plays||0)+1; if(m&&m.won){ r.wins=(r.wins||0)+1; }
+      // Prefer the score the game reports; fall back to the best live score it showed (many games
+      // call kiwiComplete() with no score, so this is what makes "best" actually stick).
+      var sc=(m&&typeof m.score==='number'&&m.score>0)?m.score:((window.__kiwiScore|0)||0);
+      if(sc>(r.best||0)){ r.best=sc; }
+      recs[gid]=r; localStorage.setItem('kiwi.records',JSON.stringify(recs));
+      var total=0; for(var k in recs){ total+=kiwiPoints(recs[k],k); }
+      localStorage.setItem('kiwi.score',String(total));
+      // Seeds are EARNED BY PERFORMANCE and credited to your spendable wallet — no more flat payout.
+      // Casino games (Blackjack, Texas Hold'em) wager their own wallet, so skip them (no double-pay).
+      var WALLET_GAMES={blackjack:1,poker:1};
+      if(!WALLET_GAMES[gid]){
+        var wt=kiwiBase(gid);                            // 10 / 25 / 50 difficulty weight
+        var earned=(m&&m.won)?wt:Math.round(wt*0.3);     // a win pays full; otherwise a small amount
+        if(sc>prevBest){ earned+=Math.round(wt*0.6); }   // beating your own best pays a skill bonus
+        if(earned<1){ earned=1; }
+        window.__kiwiEarned=earned;
+        try{ if(window.KiwiWallet) KiwiWallet.add(earned); }catch(e){}
+      } else { window.__kiwiEarned=0; }
+      submitScore(gid,r.best);
+    }catch(e){}
+  };
+  function submitScore(gid,best){
+    try{
+      var cfg=window.KIWI_AUTH_CONFIG; if(!cfg||!cfg.enabled||!cfg.url) return;
+      var tok=null,uid=null;
+      for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i);
+        if(k&&k.indexOf('sb-')===0&&k.indexOf('-auth-token')>-1){ var raw=localStorage.getItem(k); if(!raw)continue;
+          var v=JSON.parse(raw); var s=(v&&v.access_token)?v:(v&&v.currentSession)?v.currentSession:null;
+          if(s&&s.access_token){ tok=s.access_token; uid=s.user&&s.user.id; } } }
+      if(!tok||!uid) return;
+      fetch(cfg.url+'/rest/v1/high_scores',{method:'POST',headers:{'apikey':cfg.anonKey,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},body:JSON.stringify({user_id:uid,game:gid,score:Math.round(best||0),updated_at:new Date().toISOString()})}).catch(function(){});
+    }catch(e){}
+  }
+  // GLOBAL best-score capture: every game shows a live score (kScore / the #status auto-driver keep
+  // window.__kiwiScore = your best this session). When you leave a game — even WITHOUT claiming — we
+  // persist that best so its Best chip shows on the gallery and syncs to your account. This is why
+  // EVERY game you actually score on gets a record, not just ones with a Claim button you pressed.
+  function recordLiveBest(){
+    try{
+      var s=(window.__kiwiScore|0)||0; if(s<=0) return;
+      var gid=(location.pathname.split('/').pop()||'game').replace('.html','');
+      var recs={}; try{ recs=JSON.parse(localStorage.getItem('kiwi.records')||'{}'); }catch(e){}
+      var r=recs[gid]||{best:0,plays:0,wins:0};
+      if(s>(r.best||0)){ r.best=s; recs[gid]=r; try{localStorage.setItem('kiwi.records',JSON.stringify(recs));}catch(e){} submitScore(gid,r.best); }
+    }catch(e){}
+  }
+  window.addEventListener('pagehide',recordLiveBest);
+  document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden') recordLiveBest(); });
+</script><script>
+(function(){
+  var POOL=["wordle","pong","fruit","minesweeper","pacman","flyer","2048","memory","snake","fifteen","simon","whack","blackjack","poker","tripeak","war","higher","tictactoe","connect","mastermind","lights","rps","reaction","breakout","typing","stroop","aim","pig","dice","oddone","maze","sokoban","blockcascade","ladder","reversi","dotsboxes","nonogram","sudokumini","bullscows","anagrams","bankroll21","pipes","rhythmtaps","checkers","gomoku","gridseek","twentyfour","lanehopper","invaders","asteroids","dino","runner","jetpack","doodlejump","fruitslice","tron","frogger","towerstack","missilecommand","bubbleshooter","starblaster","meteordodge","airhockey","centipede","battleship","chess","skipbo","solitaire","unicorns","rummy","hearts","spades","gofish","crazy8s","cribbage","oldmaid","speed","golf","euchre","rummy500","kingscorner","snap"];
+  function on(){ try{ return localStorage.getItem('kiwi.shuffle')==='1'; }catch(e){ return false; } }
+  function nextGame(){ var gid=(location.pathname.split('/').pop()||'').replace('.html',''); var p=POOL.filter(function(x){return x!==gid;}); if(!p.length)p=POOL; if(!p.length)return; location.href=p[Math.floor(Math.random()*p.length)]+'.html'; }
+  function stop(){ try{ localStorage.removeItem('kiwi.shuffle'); }catch(e){} var a=document.getElementById('kiwi-shuffle-chip'); if(a)a.remove(); var o=document.getElementById('kiwi-keep'); if(o)o.remove(); }
+  var ended=false, autoT=null;
+  function keepPlaying(win){
+    if(!on()||ended)return; ended=true;
+    var earned=(window.__kiwiEarned|0);
+    var o=document.createElement('div'); o.id='kiwi-keep';
+    o.style.cssText='position:fixed;inset:0;z-index:100000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:rgba(28,27,22,.82);text-align:center;padding:24px;font-family:Geist,-apple-system,system-ui,sans-serif;color:#fff';
+    o.innerHTML='<div style="font-family:Newsreader,Georgia,serif;font-weight:600;font-size:30px">'+(win?'Nice one!':'Good try!')+'</div>'+
+      '<div style="font-weight:600;font-size:14px;opacity:.85">'+(earned>0?('+'+earned+' Seeds \u00b7 '):'')+'Next game in <span id="kk-c">3</span>\u2026</div>'+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:2px">'+
+        '<button id="kk-go" style="background:#6F9A4E;color:#fff;border:0;border-radius:13px;padding:14px 24px;font-family:inherit;font-weight:800;font-size:16px;cursor:pointer;box-shadow:0 12px 26px -12px rgba(111,154,78,.8)">Keep playing \u2192</button>'+
+        '<button id="kk-stop" style="background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:13px;padding:14px 20px;font-family:inherit;font-weight:700;font-size:14px;cursor:pointer">Stop shuffle</button>'+
+      '</div>';
+    document.body.appendChild(o);
+    document.getElementById('kk-go').addEventListener('click',function(){ if(autoT)clearTimeout(autoT); nextGame(); });
+    document.getElementById('kk-stop').addEventListener('click',function(){ if(autoT)clearTimeout(autoT); stop(); });
+    var n=3,cEl=document.getElementById('kk-c'); var iv=setInterval(function(){ n--; if(cEl)cEl.textContent=(n>0?n:0); if(n<=0)clearInterval(iv); },1000);
+    autoT=setTimeout(nextGame,3300);
+  }
+  // Win / any reported completion: the shim calls this on kiwiComplete (passes the payload).
+  window.__kiwiShuffleNext=function(m){ if(!on())return; keepPlaying(!(m&&m.won===false)); };
+  // Loss: most games never call kiwiComplete on a game-over, so watch #status for a clear terminal
+  // phrase and offer Keep Playing then too.
+  function watchLoss(){
+    var st=document.getElementById('status'); if(!st)return;
+    var RE=/(game over|you lose|you lost|checkmate|run over|ship lost|out of (tries|balls|moves|time)|no moves|better luck|caught|time'?s? up|\btime!)/i;
+    var fire=function(){ if(RE.test(String(st.textContent||''))) keepPlaying(false); };
+    try{ new MutationObserver(fire).observe(st,{childList:true,characterData:true,subtree:true}); }catch(e){}
+  }
+  if(on()){ document.addEventListener('DOMContentLoaded',function(){
+    var b=document.createElement('div'); b.id='kiwi-shuffle-chip';
+    b.style.cssText='position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:71;display:inline-flex;gap:7px;align-items:center;background:#6F9A4E;color:#fff;font-family:Geist,-apple-system,system-ui,sans-serif;font-weight:700;font-size:12px;padding:5px 7px 5px 13px;border-radius:999px;box-shadow:0 8px 20px -8px rgba(46,43,37,.55)';
+    b.innerHTML='\u2928 Shuffle on <button id="kk-off" style="background:rgba(255,255,255,.9);color:#3d5a2a;border:0;border-radius:999px;padding:4px 11px;font-family:inherit;font-weight:800;font-size:11.5px;cursor:pointer">Stop</button>';
+    document.body.appendChild(b);
+    document.getElementById('kk-off').addEventListener('click',stop);
+    watchLoss();
+  }); }
+})();
+</script><script>
+(function(){
+  function reflow(){
+    try{
+      if(!window.matchMedia||!matchMedia('(max-width:640px)').matches)return;
+      var split=document.querySelector('.k-split'); if(!split)return;
+      var left=split.querySelector('.k-left'); var host=split.parentNode; if(!left||!host)return;
+      if(host.querySelector('.kiwi-btnbar'))return;
+      var rows=[],kids=left.children;
+      for(var i=0;i<kids.length;i++){ var el=kids[i]; if(el.tagName==='DIV'&&el.querySelector&&el.querySelector('button.k-press,button.k-earnbtn')){ rows.push(el); } }
+      if(!rows.length)return;
+      var bar=document.createElement('div'); bar.className='kiwi-btnbar';
+      for(var j=0;j<rows.length;j++){ bar.appendChild(rows[j]); }
+      host.appendChild(bar);
+    }catch(e){}
+  }
+  if(document.readyState!=='loading')reflow(); else document.addEventListener('DOMContentLoaded',reflow);
+})();
+</script><a href="../index.html" style="position:fixed;top:12px;left:14px;z-index:60;display:inline-flex;align-items:center;gap:6px;text-decoration:none;background:#fff;color:#C26343;border:1.5px solid #E2DCCC;border-radius:999px;padding:6px 13px;font:600 12.5px Geist,-apple-system,system-ui,sans-serif;box-shadow:0 6px 16px -10px rgba(46,43,37,.5)">← All games</a><style>
+  .kc-btnfix{position:fixed;bottom:14px;left:14px;z-index:60;display:flex;gap:8px}
+  .kc-restart{display:inline-flex;align-items:center;gap:6px;
+    background:#fff;color:#C26343;border:1.5px solid #E2DCCC;border-radius:999px;padding:7px 14px;cursor:pointer;
+    font:600 12.5px Geist,-apple-system,system-ui,sans-serif;box-shadow:0 6px 16px -10px rgba(46,43,37,.5)}
+  .kc-restart:hover{border-color:#D97757}
+  .kc-random{background:#6F9A4E;color:#fff;border-color:#6F9A4E}
+  .kc-random:hover{background:#557F38;border-color:#557F38}
+  :root[data-kiwi-theme="dark"] .kc-restart{background:#26241D;border-color:#3A362B;color:#E0906F}
+  :root[data-kiwi-theme="dark"] .kc-random{background:#557F38;border-color:#557F38;color:#fff}
+  :root[data-kiwi-theme="dark"] a[href$="index.html"]{background:#26241D!important;border-color:#3A362B!important}
+</style>
+<div class="kc-btnfix"><button class="kc-restart" id="kc-restart" title="Restart this game">↻ Restart</button><button class="kc-restart kc-random" id="kc-random" title="Skip to another game" style="display:none">⤨ Skip</button></div>
+<script>
+  // Save / resume: a tiny per-game, per-page state store any game can opt into.
+  //   KiwiSave.save(stateObj)  — persist a snapshot (call it after each move/turn)
+  //   KiwiSave.load()          — get the snapshot back on load (or null)
+  //   KiwiSave.clear()         — drop it (call on game over / win)
+  //   KiwiSave.has()           — is there a saved game?
+  // Keyed by the page's game id so each game keeps its own save. Also records "last played"
+  // and a small index the gallery reads to offer "Continue where you left off".
+  (function(){
+    var gid=(location.pathname.split('/').pop()||'game').replace('.html','');
+    function idx(){ try{ return JSON.parse(localStorage.getItem('kiwi.saves')||'{}'); }catch(e){ return {}; } }
+    window.KiwiSave={
+      gid:gid,
+      save:function(state){ try{ localStorage.setItem('kiwi.save.'+gid, JSON.stringify(state));
+        var m=idx(); m[gid]=Date.now(); localStorage.setItem('kiwi.saves', JSON.stringify(m)); }catch(e){} },
+      load:function(){ try{ var r=localStorage.getItem('kiwi.save.'+gid); return r?JSON.parse(r):null; }catch(e){ return null; } },
+      has:function(){ try{ return !!localStorage.getItem('kiwi.save.'+gid); }catch(e){ return false; } },
+      clear:function(){ try{ localStorage.removeItem('kiwi.save.'+gid); var m=idx(); delete m[gid]; localStorage.setItem('kiwi.saves', JSON.stringify(m)); }catch(e){} }
+    };
+  })();
+  (function(){
+    // Shared, spendable Seeds bankroll used by the casino games (Blackjack, Video Poker, …). One
+    // balance across every game. New players start at 100; if you ever bust to 0 you get a small
+    // refill so you're never locked out. Separate from the leaderboard's lifetime score.
+    var KEY='kiwi.wallet', START=100, REFILL=25;
+    function get(){ try{ var v=localStorage.getItem(KEY); if(v===null){ localStorage.setItem(KEY,String(START)); return START; } var n=parseInt(v,10); return isNaN(n)?START:n; }catch(e){ return START; } }
+    function put(n){ try{ localStorage.setItem(KEY,String(Math.max(0,Math.round(n)))); }catch(e){} return Math.max(0,Math.round(n)); }
+    window.KiwiWallet={
+      balance:get,
+      set:function(n){ return put(n); },
+      add:function(n){ return put(get()+(n||0)); },
+      spend:function(n){ n=n||0; var b=get(); if(n>b) return false; put(b-n); return true; },
+      // Call when a player is broke so they can keep playing; returns the topped-up balance.
+      ensure:function(min){ min=min||REFILL; var b=get(); if(b<min){ return put(min); } return b; }
+    };
+  })();
+  (function(){
+    document.getElementById('kc-restart').addEventListener('click',function(){ try{ if(window.KiwiSave) KiwiSave.clear(); }catch(e){} location.reload(); });
+    // "Skip" button next to Restart — ONLY during a shuffle session: bail on the current game and
+    // jump to another random single-player one.
+    var __RPOOL=["wordle","pong","fruit","minesweeper","pacman","flyer","2048","memory","snake","fifteen","simon","whack","blackjack","poker","tripeak","war","higher","tictactoe","connect","mastermind","lights","rps","reaction","breakout","typing","stroop","aim","pig","dice","oddone","maze","sokoban","blockcascade","ladder","reversi","dotsboxes","nonogram","sudokumini","bullscows","anagrams","bankroll21","pipes","rhythmtaps","checkers","gomoku","gridseek","twentyfour","lanehopper","invaders","asteroids","dino","runner","jetpack","doodlejump","fruitslice","tron","frogger","towerstack","missilecommand","bubbleshooter","starblaster","meteordodge","airhockey","centipede","battleship","chess","skipbo","solitaire","unicorns","rummy","hearts","spades","gofish","crazy8s","cribbage","oldmaid","speed","golf","euchre","rummy500","kingscorner","snap"];
+    var __rb=document.getElementById('kc-random');
+    var __inShuffle=false; try{ __inShuffle=localStorage.getItem('kiwi.shuffle')==='1'; }catch(e){}
+    if(__rb && __inShuffle){ __rb.style.display='';
+      __rb.addEventListener('click',function(){ var gid=(location.pathname.split('/').pop()||'').replace('.html',''); var p=__RPOOL.filter(function(x){return x!==gid;}); if(!p.length)p=__RPOOL; if(p.length){ location.href=p[Math.floor(Math.random()*p.length)]+'.html'; } }); }
+    var CODES={ArrowUp:'ArrowUp',ArrowDown:'ArrowDown',ArrowLeft:'ArrowLeft',ArrowRight:'ArrowRight',' ':'Space',Enter:'Enter'};
+    var KEYS={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,' ':32,Enter:13};
+    // Deliver a synthetic key to the game's actual play surface. Games attach keydown to a canvas
+    // or a [tabindex] board (most) or to document (a few). We dispatch ON the play surface with
+    // bubbles:true so it reaches BOTH a canvas-attached listener AND any document-level listener —
+    // and it works even when focus is on a button (e.g. the Claim button), which the old
+    // activeElement-based version broke.
+    function surface(){
+      var c=document.querySelector('canvas'); if(c){ return c; }
+      var t=document.querySelector('[tabindex]'); if(t){ return t; }
+      var a=document.activeElement; if(a&&a!==document.body&&a!==document.documentElement){ return a; }
+      return document.body;
+    }
+    function dispatch(target,type,key){
+      var ev;
+      try{ ev=new KeyboardEvent(type,{key:key,code:CODES[key]||key,keyCode:KEYS[key]||0,which:KEYS[key]||0,bubbles:true,cancelable:true}); }
+      catch(e){ ev=document.createEvent('Event'); ev.initEvent(type,true,true); ev.key=key; ev.keyCode=KEYS[key]||0; ev.which=KEYS[key]||0; }
+      target.dispatchEvent(ev);
+    }
+    function keyDown(key){ var s=surface(); try{ if(s&&s.tagName==='CANVAS'&&s.focus){ s.focus(); } }catch(e){} dispatch(s,'keydown',key); }
+    function keyUp(key){ dispatch(surface(),'keyup',key); }
+    function tapKey(key){ keyDown(key); keyUp(key); }   // momentary — for discrete-move games
+    // Mobile controls for arrow-key games (data-dpad="1", set per-game at build time): NO on-screen
+    // D-pad — swipe to move and tap for the action, which is cleaner. Card / board / click / pointer
+    // games get nothing injected (they use native taps).
+    var dpadOn=document.body.getAttribute('data-dpad')==='1';
+    // Swipe-to-arrow anywhere on the game area (tap = Action/Space for jump-style games) — only for
+    // arrow-key games. Ignores touches that start on a button/link/input so the UI keeps working.
+    var sx=0,sy=0,st=0,moved=false;
+    function interactive(el){ while(el&&el!==document.body){ var t=(el.tagName||'').toLowerCase(); if(t==='button'||t==='a'||t==='input'||t==='select'||t==='textarea') return true; el=el.parentNode; } return false; }
+    if(dpadOn){
+    // A game can set window.__kiwiOwnTouch=true to take over touch itself (custom gestures) — skip
+    // the generic swipe->arrow / tap->Space translation for it so the two don't fight.
+    document.addEventListener('touchstart',function(e){ if(window.__kiwiOwnTouch||interactive(e.target))return; var t=e.touches[0]; sx=t.clientX; sy=t.clientY; st=e.timeStamp; moved=false; },{passive:true});
+    // Stop the page from scrolling/bouncing while you swipe to play an arrow-key game.
+    document.addEventListener('touchmove',function(e){ if(!window.__kiwiOwnTouch&&!interactive(e.target)&&e.cancelable){ e.preventDefault(); } },{passive:false});
+    document.addEventListener('touchend',function(e){ if(window.__kiwiOwnTouch||interactive(e.target))return; var t=e.changedTouches[0]; var dx=t.clientX-sx, dy=t.clientY-sy; var adx=Math.abs(dx), ady=Math.abs(dy);
+      if(adx<24&&ady<24){ tapKey(' '); return; }                         // tap → Space
+      if(adx>ady){ tapKey(dx>0?'ArrowRight':'ArrowLeft'); } else { tapKey(dy>0?'ArrowDown':'ArrowUp'); }
+    },{passive:true});
+    }
+  })();
+</script><script>
+  const vscode = acquireVsCodeApi();
+  // --- "Track everything": every click, key, scroll (+ depth), mouse move (+ distance), plus
+  //     thinking time (ms to first action) and derived move speed. Games may bump KM.moves /
+  //     KM.guesses. Snapshot is sent on completion, every 3s, and on hide (so skips count too). ---
+  var KM = { startedAt: Date.now(), firstInputMs: null, clicks: 0, keys: 0, scrolls: 0, maxScrollPct: 0, maxScrollSpeed: 0, skimStartPct: -1, mouseMoves: 0, mouseDistPx: 0, moves: 0, guesses: 0, qType: '', qRating: 0, qChoice: '', qInterests: [], qTarget: '', _lx: null, _ly: null, _st: 0, _sy: 0 };
+  function _kfirst(){ if (KM.firstInputMs === null) { KM.firstInputMs = Date.now() - KM.startedAt; } }
+  document.addEventListener('click', function(){ KM.clicks++; _kfirst(); }, true);
+  document.addEventListener('keydown', function(){ KM.keys++; _kfirst(); }, true);
+  document.addEventListener('mousemove', function(e){ KM.mouseMoves++; if (KM._lx !== null) { KM.mouseDistPx += Math.abs(e.clientX - KM._lx) + Math.abs(e.clientY - KM._ly); } KM._lx = e.clientX; KM._ly = e.clientY; }, true);
+  document.addEventListener('scroll', function(ev){ KM.scrolls++; var t = ev && ev.target; var d = (t && t.nodeType === 1 && t.scrollHeight > t.clientHeight) ? t : (document.scrollingElement || document.documentElement); if (d && d.scrollHeight > d.clientHeight) { var p = Math.round(100 * d.scrollTop / (d.scrollHeight - d.clientHeight)); if (p > KM.maxScrollPct) { KM.maxScrollPct = p; } var now = Date.now(); if (KM._st) { var dt = (now - KM._st) / 1000; if (dt > 0) { var v = Math.abs(d.scrollTop - KM._sy) / dt; if (v > KM.maxScrollSpeed) { KM.maxScrollSpeed = Math.round(v); } if (v > 1200 && KM.skimStartPct < 0) { KM.skimStartPct = p; } } } KM._st = now; KM._sy = d.scrollTop; } }, true);
+  function kmSnapshot(){ var sec = Math.max(0.001, (Date.now() - KM.startedAt) / 1000); return { firstInputMs: KM.firstInputMs, clicks: KM.clicks, keys: KM.keys, scrolls: KM.scrolls, maxScrollPct: KM.maxScrollPct, maxScrollSpeed: KM.maxScrollSpeed, skimStartPct: KM.skimStartPct, mouseMoves: KM.mouseMoves, mouseDistPx: Math.round(KM.mouseDistPx), moves: KM.moves, guesses: KM.guesses, articleWords: KM.articleWords || 0, readSec: Math.round((KM.readMs || 0) / 1000), wpm: KM.wpm || 0, dwellCV: KM.dwellCV || 0, dwellDeciles: KM.dwellDeciles || [], qType: KM.qType || '', qRating: KM.qRating || 0, qChoice: KM.qChoice || '', qInterests: KM.qInterests || [], qTarget: KM.qTarget || '', articleTitle: KM.articleTitle || '', actions: KM.clicks + KM.keys, actionsPerSec: Math.round((KM.clicks + KM.keys) / sec * 100) / 100, activeSec: Math.round(sec) }; }
+  setInterval(function(){ try { vscode.postMessage({ type: 'metrics', metrics: kmSnapshot() }); } catch(e){} }, 3000);
+  window.addEventListener('pagehide', function(){ try { vscode.postMessage({ type: 'metrics', metrics: kmSnapshot() }); } catch(e){} });
+  // bonusSeeds = extra Seeds (survival games pay more the longer you last); score = the raw game score.
+  function kiwiComplete(bonusSeeds, score, won){ vscode.postMessage({type:'complete', bonusSeeds: Math.max(0, Math.round(bonusSeeds||0)), score: (score===undefined||score===null)?null:Math.round(score), won: (won===undefined?null:!!won), metrics: kmSnapshot()}); }
+  // Brief pop to flag a point/score change.
+  function kpop(el){ if(!el)return; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+  // --- Big live score for games -------------------------------------------------------------
+  // Shows the running score in large font as you play, with your all-time best for this game
+  // (injected by the host as __KIWI_BEST). Games can call window.kScore(n) directly; otherwise an
+  // auto-driver mirrors the score out of the game's #status line so EVERY game gets a big readout.
+  var KBEST = (window.__KIWI_BEST | 0) || 0;
+  function kScore(n){
+    n = Math.round(n || 0);
+    if (n > KBEST) { KBEST = n; }
+    try { window.__kiwiScore = KBEST; } catch (e) {}   // best live score this session (records fallback)
+    var box = document.getElementById('kbigscore'); if (!box) { return; }
+    var nowEl = document.getElementById('kbs-now'), hiEl = document.getElementById('kbs-hi');
+    box.style.display = '';
+    if (nowEl) { nowEl.textContent = n; kpop(nowEl); }
+    if (hiEl) { hiEl.textContent = KBEST > 0 ? ('BEST ' + KBEST) : ''; }
+  }
+  window.kScore = kScore;
+  (function(){
+    // Pull the score out of common status phrasings ("Score: 5", "Dots: 3", "Got 7", "Level 4"),
+    // ignoring lines that have no score (e.g. "Mines left: 10"). Leading number of a matched phrase.
+    function scoreFrom(t){ var m = String(t || '').match(/(?:score|dots|points|got|level|streak|combo)D*(-?d+)/i); return m ? parseInt(m[1], 10) : null; }
+    function tick(){ var st = document.getElementById('status'); if (!st) { return; } var n = scoreFrom(st.textContent); if (n !== null) { kScore(n); } }
+    function attach(){ var st = document.getElementById('status'); if (st) { try { new MutationObserver(tick).observe(st, { childList: true, characterData: true, subtree: true }); } catch(e){} tick(); } }
+    if (document.readyState !== 'loading') { attach(); } else { document.addEventListener('DOMContentLoaded', attach); }
+  })();
+  window.addEventListener('error', function(ev){ try{ console.log('[KIWI-ERR] '+(ev.message||'')+' @'+ev.lineno+':'+ev.colno); }catch(e){} });
+</script><style>
+    #chessStage{position:relative}
+    /* A real board: warm wood frame + soft shadow, cradling the 8x8 grid. */
+    .cx-frame{display:inline-block;padding:10px 10px 22px;border-radius:12px;position:relative;
+              background:linear-gradient(158deg,#7a5836 0%,#5c4126 55%,#3f2c18 100%);
+              box-shadow:0 16px 30px -14px rgba(38,26,12,.62),0 3px 8px -4px rgba(38,26,12,.4),inset 0 0 0 1px rgba(255,255,255,.06)}
+    /* Neutralise the shell's #board zoom:1.22 so the grid stays inside its frame; scale via --sq instead. */
+    #chessStage #board{zoom:1}
+    .cx-board{--sq:46px;display:grid;grid-template-columns:repeat(8,var(--sq));grid-template-rows:repeat(8,var(--sq));
+              border-radius:5px;overflow:hidden;box-shadow:0 2px 9px rgba(0,0,0,.35),inset 0 0 0 1px rgba(0,0,0,.28)}
+    @media (max-width:600px){ .cx-board{--sq:min(10.3vw,46px)} .cx-frame{padding:8px 8px 19px} }
+    .cx-cell{width:var(--sq);height:var(--sq);display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer;user-select:none;-webkit-user-select:none}
+    .cx-cell.light{background:#EAD8B4}
+    .cx-cell.dark{background:#AE7A4E}
+    .cx-cell.lm{box-shadow:inset 0 0 0 4px rgba(217,166,92,.55)}
+    .cx-cell.sel{box-shadow:inset 0 0 0 3px var(--clay)}
+    .cx-cell.check{box-shadow:inset 0 0 0 3px #C0392B;animation:cxcheck .5s ease-out}
+    @keyframes cxcheck{0%{box-shadow:inset 0 0 0 0 rgba(192,57,43,.9)}60%{box-shadow:inset 0 0 0 5px rgba(192,57,43,.9)}100%{box-shadow:inset 0 0 0 3px rgba(192,57,43,.9)}}
+    .cx-cell.hint::after{content:'';position:absolute;width:30%;height:30%;border-radius:50%;background:rgba(50,40,28,.32);z-index:3}
+    .cx-cell.hint.cap::after{width:100%;height:100%;border-radius:0;background:transparent;box-shadow:inset 0 0 0 4px rgba(192,57,43,.5)}
+    /* File/rank coordinates tucked into the edge squares (contrast = the opposite square shade). */
+    .cx-coord{position:absolute;font-size:9px;font-weight:700;font-family:var(--sans);line-height:1;opacity:.8;pointer-events:none;z-index:1}
+    .cx-coord.file{right:3px;bottom:2px}
+    .cx-coord.rank{left:2.5px;top:2px}
+    .cx-cell.light>.cx-coord{color:#9a6a40}
+    .cx-cell.dark>.cx-coord{color:#EAD8B4}
+    /* Pieces are inline SVG — fill + stroke are set by CSS per side, so colour NEVER depends on the
+       system font (the old Unicode chess glyphs rendered as solid emoji and painted White black). */
+    .cx-pc{width:84%;height:84%;pointer-events:none;position:relative;z-index:2;display:flex;align-items:center;justify-content:center}
+    .cx-pc svg{width:100%;height:100%;overflow:visible;stroke-linejoin:round;stroke-linecap:round}
+    .cx-pc.w svg{fill:#F6EEDA;stroke:#2c2013;stroke-width:1.5px;filter:drop-shadow(0 2px 1.3px rgba(34,22,8,.42))}
+    .cx-pc.b svg{fill:#2b2723;stroke:#efe6cf;stroke-width:1.1px;filter:drop-shadow(0 2px 1.3px rgba(0,0,0,.5))}
+    .cx-pc.place{animation:ktilepop .2s cubic-bezier(.2,.9,.3,1.2)}
+    #cxPanel{display:none;position:absolute;inset:6px;border-radius:14px;background:rgba(251,250,244,.95);
+             flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;z-index:5}
+    :root[data-kiwi-theme="dark"] #cxPanel{background:rgba(28,26,21,.94)}
+    #cxPanel .cx-res{font-family:var(--display);font-size:26px;color:var(--fg)}
+    @media (prefers-reduced-motion:reduce){ .cx-cell.check,.cx-pc.place{animation:none} }
+  </style>
+  <div class="wrap"><div class="k-split">
+  <div class="k-left"><div class="k-label">Quick Play</div><h1 class="k-title">Chess</h1><div class="k-sub">You are White — checkmate the CPU · earn <span class="reward">Seeds</span></div><hr class="k-hud-rule"><div id="kbigscore" class="k-bigscore" style="display:none"><span id="kbs-now" class="k-bigscore-n">0</span><span id="kbs-hi" class="k-bigscore-hi"></span></div>
+  <div id="status" class="k-sub" style="margin-top:8px">Your move — you are White.</div>
+  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><span class="k-chip" id="turnChip">White to move</span><span class="k-chip" id="matChip">Even</span></div>
+  <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap"><button id="reset" class="k-press">Restart</button> <button id="done" class="k-earnbtn k-press" disabled>Claim Seeds</button></div>
+  </div>
+  <div class="k-right" id="chessStage">
+    <div class="cx-frame"><div class="cx-board" id="board"></div></div>
+    <div id="cxPanel">
+      <div class="k-label" id="cxResLbl">Game over</div>
+      <div class="cx-res" id="cxRes"></div>
+      <button id="cxAgain" class="k-press">Play again</button>
+    </div>
+  </div>
+  </div>
+  <script>
+    var statusEl=document.getElementById('status'),done=document.getElementById('done'),board=document.getElementById('board');
+    var turnChip=document.getElementById('turnChip'),matChip=document.getElementById('matChip'),stage=document.getElementById('chessStage');
+    var panel=document.getElementById('cxPanel'),resEl=document.getElementById('cxRes'),resLbl=document.getElementById('cxResLbl');
+    var cells,coordHTML;
+    var S,selected,curMoves,over,result,unlocked,thinking,lastMove;
+    // Inline-SVG chess set (viewBox 0 0 45 45). Fill/stroke come from CSS (.cx-pc.w / .cx-pc.b) so a
+    // White piece is ALWAYS ivory and a Black piece ALWAYS charcoal, on every square, in any font.
+    var PIECES={
+      P:'<svg viewBox="0 0 45 45"><circle cx="22.5" cy="13" r="5.6"/><path d="M17 20.5 h11 c-0.4 3 -2.2 4.6 -3 6.4 c1.8 2.4 3.4 5 3.4 8.1 h-12.2 c0 -3.1 1.6 -5.7 3.4 -8.1 c-0.8 -1.8 -2.6 -3.4 -3 -6.4 z"/><path d="M13.5 39.5 c0 -4 4 -5.6 9 -5.6 s9 1.6 9 5.6 z"/></svg>',
+      N:'<svg viewBox="0 0 45 45"><path d="M22 9.5 c-4.3 0 -7.2 2.4 -9.2 5.4 c-1.7 2.5 -3.3 5 -3.3 9.1 c0 1.9 2 2.6 3.2 1.3 c1 -1.1 2.1 -2.4 3.3 -2.9 c-0.6 2.6 -3 4.6 -3 7.6 c0 0.9 0.3 1.5 0.3 1.5 h18.9 c1.4 -8.6 1.3 -16.9 -3 -21.2 c-2 -2 -4.4 -0.8 -7.2 -0.8 z"/><path d="M12.5 32.5 h20 c1.3 0 1.6 7.5 0.4 7.5 h-21.2 c-1.2 0 -0.5 -7.5 0.8 -7.5 z"/></svg>',
+      B:'<svg viewBox="0 0 45 45"><circle cx="22.5" cy="8.5" r="2.4"/><path d="M22.5 10.6 c5.2 3.2 8.2 8 8.2 13.4 c0 3.2 -1.8 5.8 -3 8.6 h-10.4 c-1.2 -2.8 -3 -5.4 -3 -8.6 c0 -5.4 3 -10.2 8.2 -13.4 z"/><path d="M20.3 17.6 h4.4 M22.5 15.4 v4.6" fill="none"/><path d="M13.5 40 c0 -4 4 -5.6 9 -5.6 s9 1.6 9 5.6 z"/></svg>',
+      R:'<svg viewBox="0 0 45 45"><path d="M13.5 14 h3.2 v2.6 h3 v-2.6 h4.6 v2.6 h3 v-2.6 h3.2 v6.2 h-20 z"/><path d="M15.8 20.2 l-1.2 14 h16.8 l-1.2 -14 z"/><path d="M12 40 c0 -4.2 4.6 -6 10.5 -6 s10.5 1.8 10.5 6 z"/></svg>',
+      Q:'<svg viewBox="0 0 45 45"><circle cx="9.5" cy="14" r="2.1"/><circle cx="16.5" cy="10.5" r="2.1"/><circle cx="22.5" cy="9" r="2.2"/><circle cx="28.5" cy="10.5" r="2.1"/><circle cx="35.5" cy="14" r="2.1"/><path d="M9.5 14 L13.8 31 h17.4 L35.5 14 L29.5 24 L26 12 L22.5 26 L19 12 L15.5 24 Z"/><path d="M13.5 31 h18 l1 3.4 h-20 z"/><path d="M12 40 c0 -4.2 4.7 -6 10.5 -6 s10.5 1.8 10.5 6 z"/></svg>',
+      K:'<svg viewBox="0 0 45 45"><path d="M21 5 h3 v3 h3 v3 h-3 v3 h-3 v-3 h-3 v-3 h3 z"/><path d="M22.5 13.5 c-6 0 -10.2 4.8 -10.2 10.8 c0 3.4 1.4 5.8 2.6 8.2 h15.2 c1.2 -2.4 2.6 -4.8 2.6 -8.2 c0 -6 -4.2 -10.8 -10.2 -10.8 z"/><path d="M15 32.5 h15 l0.6 3 h-16.2 z"/><path d="M12 40 c0 -4.2 4.7 -6 10.5 -6 s10.5 1.8 10.5 6 z"/></svg>'
+    };
+    var VAL={P:100,N:320,B:330,R:500,Q:900,K:0};
+    var MATE=100000;
+    function inb(r,c){return r>=0&&r<8&&c>=0&&c<8;}
+    function ci(r,c){return r*8+c;}
+    function rc(i){return[Math.floor(i/8),i%8];}
+    function colorOf(p){if(!p)return null;return p===p.toUpperCase()?'w':'b';}
+    function typeOf(p){return p?p.toUpperCase():null;}
+    function opp(col){return col==='w'?'b':'w';}
+    function startBoard(){
+      var b=new Array(64).fill(null);
+      var back=['R','N','B','Q','K','B','N','R'];
+      for(var c=0;c<8;c++){b[ci(0,c)]=back[c].toLowerCase();b[ci(1,c)]='p';b[ci(6,c)]='P';b[ci(7,c)]=back[c];}
+      return b;
+    }
+    function newState(){return{bd:startBoard(),castle:{K:true,Q:true,k:true,q:true},ep:-1,turn:'w'};}
+    function findKing(bd,col){var t=col==='w'?'K':'k';for(var i=0;i<64;i++)if(bd[i]===t)return i;return -1;}
+    function attacked(bd,r,c,by){
+      // pawns: a white pawn sits one row below and attacks upward; black one row above.
+      var pd=by==='w'?1:-1,pp=by==='w'?'P':'p';
+      if(inb(r+pd,c-1)&&bd[ci(r+pd,c-1)]===pp)return true;
+      if(inb(r+pd,c+1)&&bd[ci(r+pd,c+1)]===pp)return true;
+      var kn=[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+      var nT=by==='w'?'N':'n';
+      for(var i=0;i<8;i++){var nr=r+kn[i][0],nc=c+kn[i][1];if(inb(nr,nc)&&bd[ci(nr,nc)]===nT)return true;}
+      var kT=by==='w'?'K':'k';
+      for(var dr=-1;dr<=1;dr++)for(var dc=-1;dc<=1;dc++){if(!dr&&!dc)continue;var kr=r+dr,kc=c+dc;if(inb(kr,kc)&&bd[ci(kr,kc)]===kT)return true;}
+      var diag=[[-1,-1],[-1,1],[1,-1],[1,1]],orth=[[-1,0],[1,0],[0,-1],[0,1]];
+      var bQ=by==='w'?'B':'b',qQ=by==='w'?'Q':'q',rQ=by==='w'?'R':'r';
+      for(var d=0;d<4;d++){var tr=r,tc=c;while(true){tr+=diag[d][0];tc+=diag[d][1];if(!inb(tr,tc))break;var pc=bd[ci(tr,tc)];if(pc){if(pc===bQ||pc===qQ)return true;break;}}}
+      for(var e=0;e<4;e++){var ur=r,uc=c;while(true){ur+=orth[e][0];uc+=orth[e][1];if(!inb(ur,uc))break;var qc=bd[ci(ur,uc)];if(qc){if(qc===rQ||qc===qQ)return true;break;}}}
+      return false;
+    }
+    function inCheck(s,col){var k=findKing(s.bd,col);if(k<0)return false;var p=rc(k);return attacked(s.bd,p[0],p[1],opp(col));}
+    function slide(bd,i,dirs,col,out){
+      var p=rc(i),r=p[0],c=p[1];
+      for(var d=0;d<dirs.length;d++){var tr=r,tc=c;while(true){tr+=dirs[d][0];tc+=dirs[d][1];if(!inb(tr,tc))break;var t=bd[ci(tr,tc)];if(!t){out.push({from:i,to:ci(tr,tc)});}else{if(colorOf(t)!==col)out.push({from:i,to:ci(tr,tc)});break;}}}
+    }
+    function pseudo(s,col){
+      var bd=s.bd,out=[];
+      for(var i=0;i<64;i++){
+        var p=bd[i];if(!p||colorOf(p)!==col)continue;
+        var t=typeOf(p),pos=rc(i),r=pos[0],c=pos[1];
+        if(t==='P'){
+          var dir=col==='w'?-1:1,startRow=col==='w'?6:1,promoRow=col==='w'?0:7;
+          var one=ci(r+dir,c);
+          if(inb(r+dir,c)&&!bd[one]){
+            if(r+dir===promoRow)out.push({from:i,to:one,promo:'Q'});else out.push({from:i,to:one});
+            if(r===startRow&&!bd[ci(r+2*dir,c)])out.push({from:i,to:ci(r+2*dir,c),dpush:true});
+          }
+          var caps=[c-1,c+1];
+          for(var k=0;k<2;k++){var cc=caps[k];if(!inb(r+dir,cc))continue;var tsq=ci(r+dir,cc),tp=bd[tsq];
+            if(tp&&colorOf(tp)!==col){if(r+dir===promoRow)out.push({from:i,to:tsq,promo:'Q'});else out.push({from:i,to:tsq});}
+            else if(s.ep===tsq&&s.ep>=0)out.push({from:i,to:tsq,ep:true});}
+        }else if(t==='N'){
+          var kn=[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+          for(var n=0;n<8;n++){var nr=r+kn[n][0],nc=c+kn[n][1];if(!inb(nr,nc))continue;var np=bd[ci(nr,nc)];if(!np||colorOf(np)!==col)out.push({from:i,to:ci(nr,nc)});}
+        }else if(t==='B'){slide(bd,i,[[-1,-1],[-1,1],[1,-1],[1,1]],col,out);}
+        else if(t==='R'){slide(bd,i,[[-1,0],[1,0],[0,-1],[0,1]],col,out);}
+        else if(t==='Q'){slide(bd,i,[[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]],col,out);}
+        else if(t==='K'){
+          for(var dr=-1;dr<=1;dr++)for(var dc=-1;dc<=1;dc++){if(!dr&&!dc)continue;var kr=r+dr,kc=c+dc;if(!inb(kr,kc))continue;var kp=bd[ci(kr,kc)];if(!kp||colorOf(kp)!==col)out.push({from:i,to:ci(kr,kc)});}
+          // castling
+          var home=col==='w'?7:0,en=opp(col);
+          var ks=col==='w'?s.castle.K:s.castle.k,qs=col==='w'?s.castle.Q:s.castle.q;
+          if(r===home&&c===4&&!attacked(bd,home,4,en)){
+            if(ks&&!bd[ci(home,5)]&&!bd[ci(home,6)]&&bd[ci(home,7)]===(col==='w'?'R':'r')&&!attacked(bd,home,5,en)&&!attacked(bd,home,6,en))out.push({from:i,to:ci(home,6),castle:'K'});
+            if(qs&&!bd[ci(home,3)]&&!bd[ci(home,2)]&&!bd[ci(home,1)]&&bd[ci(home,0)]===(col==='w'?'R':'r')&&!attacked(bd,home,3,en)&&!attacked(bd,home,2,en))out.push({from:i,to:ci(home,2),castle:'Q'});
+          }
+        }
+      }
+      return out;
+    }
+    function makeMove(s,m){
+      var bd=s.bd.slice(),cs={K:s.castle.K,Q:s.castle.Q,k:s.castle.k,q:s.castle.q};
+      var piece=bd[m.from],col=colorOf(piece);
+      bd[m.from]=null;
+      if(m.ep){var fp=rc(m.from),tp=rc(m.to);bd[ci(fp[0],tp[1])]=null;}
+      var placed=piece;
+      if(m.promo)placed=col==='w'?m.promo:m.promo.toLowerCase();
+      bd[m.to]=placed;
+      if(m.castle){var home=col==='w'?7:0;if(m.castle==='K'){bd[ci(home,5)]=bd[ci(home,7)];bd[ci(home,7)]=null;}else{bd[ci(home,3)]=bd[ci(home,0)];bd[ci(home,0)]=null;}}
+      if(piece==='K'){cs.K=false;cs.Q=false;}if(piece==='k'){cs.k=false;cs.q=false;}
+      if(m.from===ci(7,7)||m.to===ci(7,7))cs.K=false;
+      if(m.from===ci(7,0)||m.to===ci(7,0))cs.Q=false;
+      if(m.from===ci(0,7)||m.to===ci(0,7))cs.k=false;
+      if(m.from===ci(0,0)||m.to===ci(0,0))cs.q=false;
+      var ep=-1;
+      if(m.dpush){var f=rc(m.from);ep=ci((f[0]+rc(m.to)[0])/2,f[1]);}
+      return{bd:bd,castle:cs,ep:ep,turn:opp(col)};
+    }
+    function legalMoves(s,col){
+      var ps=pseudo(s,col),out=[];
+      for(var i=0;i<ps.length;i++){var ns=makeMove(s,ps[i]);if(!inCheck(ns,col))out.push(ps[i]);}
+      return out;
+    }
+    // --- Evaluation (positive = good for Black, the CPU) ------------------------------------
+    function evalBlack(s){
+      var bd=s.bd,sc=0;
+      for(var i=0;i<64;i++){var p=bd[i];if(!p)continue;var t=typeOf(p),pos=rc(i),r=pos[0],c=pos[1];
+        var v=VAL[t];
+        // light central preference for pawns/knights/bishops
+        var cen=0;if(t==='P'||t==='N'||t==='B')cen=(3.5-Math.abs(3.5-c))+(3.5-Math.abs(3.5-r));
+        // pawn advance
+        var adv=0;if(t==='P')adv=colorOf(p)==='b'?r:(7-r);
+        var pv=v+cen*3+adv*4;
+        if(colorOf(p)==='b')sc+=pv;else sc-=pv;
+      }
+      return sc;
+    }
+    function evalFor(s,col){var e=evalBlack(s);return col==='b'?e:-e;}
+    function negamax(s,depth,alpha,beta,col){
+      var mv=legalMoves(s,col);
+      if(mv.length===0){if(inCheck(s,col))return -MATE+ (10-depth);return 0;}
+      if(depth===0)return evalFor(s,col);
+      var best=-Infinity;
+      for(var i=0;i<mv.length;i++){var ns=makeMove(s,mv[i]);var v=-negamax(ns,depth-1,-beta,-alpha,opp(col));if(v>best)best=v;if(best>alpha)alpha=best;if(alpha>=beta)break;}
+      return best;
+    }
+    function cpuChoose(s){
+      var mv=legalMoves(s,'b');if(mv.length===0)return null;
+      var best=-Infinity,bestMoves=[];
+      for(var i=0;i<mv.length;i++){
+        var ns=makeMove(s,mv[i]);
+        var sc=-negamax(ns,1,-Infinity,Infinity,'w');
+        if(inCheck(ns,'w'))sc+=8;
+        sc+=Math.random()*4;
+        if(sc>best+1e-6){best=sc;bestMoves=[mv[i]];}else if(sc>best-1e-6){bestMoves.push(mv[i]);}
+      }
+      return bestMoves[Math.floor(Math.random()*bestMoves.length)];
+    }
+    // --- Material readout ------------------------------------------------------------------
+    function material(bd){var w=0,b=0;for(var i=0;i<64;i++){var p=bd[i];if(!p)continue;var v=VAL[typeOf(p)];if(colorOf(p)==='w')w+=v;else b+=v;}return{w:w,b:b};}
+    function updChips(){
+      turnChip.textContent=over?'Game over':(S.turn==='w'?'White to move':'Black to move');
+      var m=material(S.bd),d=Math.round((m.w-m.b)/100);
+      matChip.textContent=d===0?'Even':(d>0?('You +'+d):('CPU +'+(-d)));
+    }
+    // --- Render ----------------------------------------------------------------------------
+    function targetsFor(i){var r=[];for(var k=0;k<curMoves.length;k++)if(curMoves[k].from===i)r.push(curMoves[k].to);return r;}
+    function isCap(to){var f=rc(to);return S.bd[to]!=null;}
+    function render(){
+      var tgts=selected!=null?targetsFor(selected):[];
+      var checkSq=-1;if(!over&&inCheck(S,S.turn))checkSq=findKing(S.bd,S.turn);
+      for(var i=0;i<64;i++){
+        var cell=cells[i],p=rc(i),dark=(p[0]+p[1])%2===1;
+        cell.className='cx-cell '+(dark?'dark':'light');
+        if(lastMove&&(i===lastMove.from||i===lastMove.to))cell.classList.add('lm');
+        if(i===selected)cell.classList.add('sel');
+        if(i===checkSq)cell.classList.add('check');
+        if(tgts.indexOf(i)>=0){cell.classList.add('hint');if(S.bd[i]||false)cell.classList.add('cap');}
+        var pc=S.bd[i];
+        cell.innerHTML=coordHTML[i]+(pc?('<span class="cx-pc place '+(colorOf(pc)==='w'?'w':'b')+'">'+PIECES[typeOf(pc)]+'</span>'):'');
+      }
+      updChips();
+    }
+    // --- Flow ------------------------------------------------------------------------------
+    function endGame(res){
+      over=true;result=res;selected=null;render();
+      if(res==='win'){resLbl.textContent='Checkmate';resEl.textContent='You win!';stage.classList.add('k-winglow');setTimeout(function(){stage.classList.remove('k-winglow');},1100);}
+      else if(res==='loss'){resLbl.textContent='Checkmate';resEl.textContent='The CPU wins.';}
+      else{resLbl.textContent='Stalemate';resEl.textContent='Draw — no legal moves.';}
+      statusEl.textContent=res==='win'?'Checkmate — you win! Claim your reward.':res==='loss'?'Checkmate — the CPU wins.':'Stalemate — the game is a draw.';
+      if(res==='win'){done.disabled=false;done.classList.add('k-earn-ready');unlocked=true;}
+      panel.style.display='flex';
+    }
+    function afterMove(justMovedColor){
+      // side to move now is opp(justMovedColor); check for mate/stalemate
+      var mover=opp(justMovedColor);
+      var mv=legalMoves(S,mover);
+      if(mv.length===0){
+        if(inCheck(S,mover)){endGame(mover==='b'?'win':'loss');}else{endGame('draw');}
+        return true;
+      }
+      return false;
+    }
+    function cpuTurn(){
+      thinking=true;statusEl.textContent='CPU is thinking\u2026';render();
+      setTimeout(function(){
+        var m=cpuChoose(S);
+        if(!m){thinking=false;afterMove('w');return;}
+        lastMove={from:m.from,to:m.to};
+        S=makeMove(S,m);
+        thinking=false;render();
+        if(afterMove('b'))return;
+        curMoves=legalMoves(S,'w');
+        statusEl.textContent=inCheck(S,'w')?'Check! Get your king to safety.':'Your move.';
+      },300);
+    }
+    function doPlayerMove(move){
+      var captured=(S.bd[move.to]!=null)||!!move.ep;
+      lastMove={from:move.from,to:move.to};
+      S=makeMove(S,move);selected=null;
+      if(captured&&!unlocked){unlocked=true;done.disabled=false;done.classList.add('k-earn-ready');}
+      render();
+      if(afterMove('w'))return;
+      cpuTurn();
+    }
+    function click(i){
+      if(over||thinking||S.turn!=='w')return;
+      var pc=S.bd[i];
+      if(selected==null){
+        if(pc&&colorOf(pc)==='w'&&targetsFor(i).length>0){selected=i;render();}
+        return;
+      }
+      if(i===selected){selected=null;render();return;}
+      var tg=targetsFor(selected);
+      if(tg.indexOf(i)>=0){
+        var move=null;for(var k=0;k<curMoves.length;k++)if(curMoves[k].from===selected&&curMoves[k].to===i){move=curMoves[k];break;}
+        if(move){doPlayerMove(move);return;}
+      }
+      if(pc&&colorOf(pc)==='w'&&targetsFor(i).length>0){selected=i;render();return;}
+      selected=null;render();
+    }
+    function init(){
+      S=newState();selected=null;over=false;result=null;unlocked=false;thinking=false;lastMove=null;
+      done.disabled=true;done.classList.remove('k-earn-ready');panel.style.display='none';
+      curMoves=legalMoves(S,'w');
+      if(!cells){
+        cells=[];coordHTML=[];board.innerHTML='';
+        for(var i=0;i<64;i++){
+          var pr=rc(i),co='';
+          if(pr[0]===7)co+='<span class="cx-coord file">'+String.fromCharCode(97+pr[1])+'</span>';
+          if(pr[1]===0)co+='<span class="cx-coord rank">'+(8-pr[0])+'</span>';
+          coordHTML.push(co);
+          (function(idx){var cell=document.createElement('div');cell.addEventListener('click',function(){click(idx);});board.appendChild(cell);cells.push(cell);})(i);
+        }
+      }
+      statusEl.textContent='Your move \u2014 you are White.';
+      render();
+    }
+    document.getElementById('reset').addEventListener('click',init);
+    document.getElementById('cxAgain').addEventListener('click',init);
+    done.addEventListener('click',function(){
+      var m=material(S.bd),d=Math.round((m.w-m.b)/100);
+      var bonus=result==='win'?10:result==='draw'?4:Math.max(1,Math.min(6,d));
+      kiwiComplete(bonus,d,result==='win');
+    });
+    init();
+  </script>
+</div><!--KHELP--><style>
+  .kh-btn{position:fixed;top:12px;right:14px;z-index:60;display:inline-flex;align-items:center;gap:6px;
+    background:var(--card);color:var(--clay-d);border:1.5px solid var(--line);border-radius:999px;
+    padding:6px 13px;font-family:var(--sans);font-weight:600;font-size:12.5px;cursor:pointer;
+    box-shadow:0 6px 16px -10px rgba(46,43,37,.5);transition:border-color .12s,background .12s}
+  .kh-btn:hover{border-color:var(--clay);background:var(--tint)}
+  .kh-btn b{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;
+    background:var(--clay);color:#fff;font-size:11px;font-weight:700}
+  .kh-overlay{position:fixed;inset:0;z-index:70;display:none;align-items:center;justify-content:center;
+    padding:22px;background:rgba(30,27,22,.44);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+  .kh-overlay.kh-open{display:flex;animation:khfade .18s ease-out}
+  @keyframes khfade{from{opacity:0}to{opacity:1}}
+  .kh-card{width:100%;max-width:440px;max-height:88vh;overflow-y:auto;background:var(--card);color:var(--fg);
+    border:1px solid var(--line);border-radius:20px;padding:24px 26px;
+    box-shadow:0 30px 60px -24px rgba(46,43,37,.6);animation:khrise .22s cubic-bezier(.2,.9,.3,1.1)}
+  @keyframes khrise{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+  .kh-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .kh-title{font-family:var(--display);font-weight:600;font-size:24px;line-height:1.15;margin:0}
+  .kh-x{flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:var(--chip);color:var(--muted);border:0;border-radius:9px;width:30px;height:30px;
+    font-size:15px;cursor:pointer;line-height:1;padding:0;text-align:center}
+  .kh-x:hover{color:var(--fg)}
+  .kh-goal{color:var(--fg);font-size:14.5px;margin:10px 0 2px}
+  .kh-sec{margin-top:16px}
+  .kh-h{font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--clay-d);margin-bottom:7px}
+  .kh-steps{margin:0;padding-left:0;list-style:none;counter-reset:kh}
+  .kh-steps li{counter-increment:kh;position:relative;padding-left:30px;margin-bottom:9px;font-size:14px;line-height:1.45}
+  .kh-steps li::before{content:counter(kh);position:absolute;left:0;top:0;width:21px;height:21px;border-radius:50%;
+    background:var(--tint);color:var(--clay-d);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .kh-controls{font-size:14px;margin:0;color:var(--fg)}
+  .kh-sec p{font-size:14px;line-height:1.45;margin:0}
+  .kh-tip{background:var(--chip);border-radius:12px;padding:12px 14px}
+  .kh-tip .kh-h{color:var(--green2)}
+  .kh-earn{background:var(--tint);border-radius:12px;padding:12px 14px}
+  .kh-go{margin-top:20px;width:100%;background:var(--clay);color:var(--gtext);border:0;border-radius:13px;
+    padding:13px;font-family:var(--sans);font-weight:600;font-size:15px;cursor:pointer}
+  .kh-go:hover{background:var(--clay-d)}
+  @media (max-height:520px){ .kh-title{font-size:20px} .kh-card{padding:18px 20px} }
+</style>
+<button class="kh-btn k-press" id="kh-open" aria-label="How to play"><b>?</b>How to play</button>
+<div class="kh-overlay" id="kh-overlay" role="dialog" aria-modal="true" aria-labelledby="kh-title">
+  <div class="kh-card">
+    <div class="kh-top"><h2 class="kh-title" id="kh-title">Chess</h2><button class="kh-x" id="kh-close" aria-label="Close">✕</button></div>
+    <p class="kh-goal">Checkmate the CPU's king — trap it so it can't escape capture.</p>
+    <div class="kh-sec"><div class="kh-h">How to play</div><ol class="kh-steps"><li>You play White and move first; tap one of your pieces to select it.</li><li>Its legal destination squares light up with dots — tap one to move there.</li><li>Capture the CPU's pieces by moving onto them; pawns reaching the back rank become queens.</li><li>Put the CPU's king in check, then close off every escape to deliver checkmate.</li></ol></div>
+    <div class="kh-sec"><div class="kh-h">Controls</div><p class="kh-controls">Tap a piece, then tap a highlighted square</p></div>
+    <div class="kh-sec kh-earn"><div class="kh-h">How you earn</div><p>Your first capture unlocks the claim; checkmating the CPU pays the top bonus.</p></div>
+    <div class="kh-sec kh-tip"><div class="kh-h">Tip</div><p>Develop your knights and bishops early and castle your king to safety before attacking.</p></div>
+    <button class="kh-go" id="kh-got">Got it — let's play</button>
+  </div>
+</div>
+<script>
+  (function(){
+    var ov=document.getElementById('kh-overlay');
+    function open(){ ov.classList.add('kh-open'); }
+    function close(){ ov.classList.remove('kh-open'); try{ localStorage.setItem("kiwi.help.seen.Chess",'1'); }catch(e){} }
+    document.getElementById('kh-open').addEventListener('click',open);
+    document.getElementById('kh-close').addEventListener('click',close);
+    document.getElementById('kh-got').addEventListener('click',close);
+    ov.addEventListener('click',function(e){ if(e.target===ov){ close(); } });
+    document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&ov.classList.contains('kh-open')){ close(); } });
+    // Never auto-open: players land straight in the game and open the rules themselves
+    // via the "How to play" button if they want them.
+  })();
+</script><!--/KHELP--></body></html>

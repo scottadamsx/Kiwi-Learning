@@ -100,6 +100,9 @@ ${exclusionPromptBlock(listExclusions(notebookId, "section"), "topics/sections")
 ${numbered.join("\n\n")}`,
     schema: OUTLINE_SCHEMA as unknown as Record<string, unknown>,
     maxTokens: 16000,
+    tier: "plan", // curriculum planning is the hardest reasoning — Fable-tier
+    effort: "high",
+    task: "outline",
   });
 
   if (!outline.modules?.length) throw new Error("Outline extraction returned no modules");

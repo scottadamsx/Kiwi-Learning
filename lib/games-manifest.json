@@ -1,0 +1,442 @@
+[
+  {
+    "id": "2048",
+    "title": "2048",
+    "rule": "Arrow keys"
+  },
+  {
+    "id": "twentyfour",
+    "title": "24",
+    "rule": "Make 24 from 4 numbers — each used once"
+  },
+  {
+    "id": "aim",
+    "title": "Aim Trainer",
+    "rule": "Click the targets as fast as you can. 20 seconds"
+  },
+  {
+    "id": "airhockey",
+    "title": "Air Hockey",
+    "rule": "Drag your mallet · first to 7 goals wins"
+  },
+  {
+    "id": "anagrams",
+    "title": "Anagrams",
+    "rule": "Find as many words as you can in the 6-letter rack — 90 seconds"
+  },
+  {
+    "id": "asteroids",
+    "title": "Asteroids",
+    "rule": "Rotate, thrust, shoot the rocks"
+  },
+  {
+    "id": "bankroll21",
+    "title": "Bankroll",
+    "rule": "Beat the house across 3+ hands — dealer stands on 17, start with 20 chips"
+  },
+  {
+    "id": "battleship",
+    "title": "Battleship",
+    "rule": "Sink the CPU fleet on the 8x8 grid"
+  },
+  {
+    "id": "blackjack",
+    "title": "Blackjack",
+    "rule": "Bet Seeds and beat the dealer — blackjack pays 3:2"
+  },
+  {
+    "id": "blockcascade",
+    "title": "Block Cascade",
+    "rule": "Move left/right · tap or up to rotate · swipe-down/Space drops"
+  },
+  {
+    "id": "breakout",
+    "title": "Brick Breaker",
+    "rule": "Move the paddle with your mouse — clear the bricks"
+  },
+  {
+    "id": "bubbleshooter",
+    "title": "Bubble Shooter",
+    "rule": "Aim, fire, match 3+ to pop"
+  },
+  {
+    "id": "bullscows",
+    "title": "Bulls and Cows",
+    "rule": "Crack the 4-digit code in 8 tries · ● right spot · ○ right digit"
+  },
+  {
+    "id": "centipede",
+    "title": "Centipede",
+    "rule": "Arrows move · Space fires · reach 200"
+  },
+  {
+    "id": "checkers",
+    "title": "Checkers",
+    "rule": "8x8 draughts vs the CPU — forced captures, kings"
+  },
+  {
+    "id": "chess",
+    "title": "Chess",
+    "rule": "You are White — checkmate the CPU"
+  },
+  {
+    "id": "stroop",
+    "title": "Color Match",
+    "rule": "Tap the COLOUR the word is printed in — not what it says. 30 seconds"
+  },
+  {
+    "id": "connect",
+    "title": "Connect 4",
+    "rule": "Drop discs and line up four — you are red"
+  },
+  {
+    "id": "crazy8s",
+    "title": "Crazy Eights",
+    "rule": "Match the suit or rank — 8s are wild. First to empty their hand wins"
+  },
+  {
+    "id": "cribbage",
+    "title": "Cribbage",
+    "rule": "Peg to 121 — fifteens, pairs, runs"
+  },
+  {
+    "id": "cycleduel",
+    "title": "Cycle Duel",
+    "rule": "Two riders, one keyboard — box the other in"
+  },
+  {
+    "id": "dice",
+    "title": "Dice Duel",
+    "rule": "Roll three dice vs the CPU — higher total wins the round. Best of 5"
+  },
+  {
+    "id": "dotsboxes",
+    "title": "Dots and Boxes",
+    "rule": "Draw lines, complete boxes, avoid giving the CPU a free one"
+  },
+  {
+    "id": "duelpong",
+    "title": "Duel Pong",
+    "rule": "Two players, one device — first to 7 wins"
+  },
+  {
+    "id": "euchre",
+    "title": "Euchre",
+    "rule": "Trump-trick battle — first to 10 points vs CPU"
+  },
+  {
+    "id": "fruit",
+    "title": "Fruit Match",
+    "rule": "Swap neighbours to line up 3+ · chain combos for power-ups"
+  },
+  {
+    "id": "fruitslice",
+    "title": "Fruit Slice",
+    "rule": "Swipe to slice fruit — dodge the bombs"
+  },
+  {
+    "id": "rummy",
+    "title": "Gin Rummy",
+    "rule": "Meld sets &amp; runs — knock with 10 or less deadwood"
+  },
+  {
+    "id": "gofish",
+    "title": "Go Fish",
+    "rule": "Ask for ranks and collect four-of-a-kind books"
+  },
+  {
+    "id": "golf",
+    "title": "Golf",
+    "rule": "Lowest 6-card total wins — swap and flip to cut your score"
+  },
+  {
+    "id": "gomoku",
+    "title": "Gomoku",
+    "rule": "Five in a row on the 12x12 board vs the CPU"
+  },
+  {
+    "id": "hearts",
+    "title": "Hearts",
+    "rule": "Duck the hearts and the Q&spades; — lowest score wins"
+  },
+  {
+    "id": "higher",
+    "title": "Higher or Lower",
+    "rule": "Guess the next card. Build a streak — one wrong call ends the run"
+  },
+  {
+    "id": "jetpack",
+    "title": "Jetpack Kiwi",
+    "rule": "Hold to boost, release to fall · dodge lasers"
+  },
+  {
+    "id": "kingscorner",
+    "title": "Kings Corner",
+    "rule": "Empty your hand onto the cross — Kings open corners"
+  },
+  {
+    "id": "frogger",
+    "title": "Kiwi Crossing",
+    "rule": "Arrow keys — hop to the top, dodge cars & rivers"
+  },
+  {
+    "id": "dino",
+    "title": "Kiwi Dino",
+    "rule": "Space/↑ jump · ↓ duck · reach 150"
+  },
+  {
+    "id": "flyer",
+    "title": "Kiwi Flyer",
+    "rule": "Tap / Space to fly · dodge the gaps · gets harder"
+  },
+  {
+    "id": "hunterprey",
+    "title": "Kiwi Hunt",
+    "rule": "Local 2P: arrows-prey vs mouse-hunter · 45s"
+  },
+  {
+    "id": "doodlejump",
+    "title": "Kiwi Jump",
+    "rule": "Steer left/right — auto-bounce up the tower, it gets harder"
+  },
+  {
+    "id": "runner",
+    "title": "Kiwi Surfers",
+    "rule": "Dodge, jump &amp; slide — reach"
+  },
+  {
+    "id": "unicorns",
+    "title": "Kiwi Unicorns",
+    "rule": "Gather a stable of 6 unicorns before the rival"
+  },
+  {
+    "id": "lanehopper",
+    "title": "Lane Hopper",
+    "rule": "Hop across scrolling lanes without getting hit"
+  },
+  {
+    "id": "tron",
+    "title": "Light Cycles",
+    "rule": "Arrow keys turn. Outlast the CPU rider"
+  },
+  {
+    "id": "lights",
+    "title": "Lights Out",
+    "rule": "Tap a tile to flip it and its neighbours — turn them all off"
+  },
+  {
+    "id": "mastermind",
+    "title": "Mastermind",
+    "rule": "Crack the 4-colour code in 8 tries · ● right spot · ○ right colour"
+  },
+  {
+    "id": "maze",
+    "title": "Maze",
+    "rule": "Arrow keys or WASD — find your way to the green exit"
+  },
+  {
+    "id": "memory",
+    "title": "Memory Match",
+    "rule": "Find all 8 pairs"
+  },
+  {
+    "id": "meteordodge",
+    "title": "Meteor Dodge",
+    "rule": "Arrow keys weave — dodge as long as you can, chase your best"
+  },
+  {
+    "id": "minesweeper",
+    "title": "Minesweeper",
+    "rule": "Clear the board without hitting a mine"
+  },
+  {
+    "id": "sudokumini",
+    "title": "Mini Sudoku",
+    "rule": "Fill the 6×6 grid — 1–6 in every row, column, and box"
+  },
+  {
+    "id": "missilecommand",
+    "title": "Missile Command",
+    "rule": "Click / tap to intercept — defend your cities"
+  },
+  {
+    "id": "nonogram",
+    "title": "Nonogram",
+    "rule": "Fill the 8×8 grid to match the row and column clues"
+  },
+  {
+    "id": "fifteen",
+    "title": "Number Slide",
+    "rule": "Slide tiles into order (1–8). Stuck? You can skip after 30s"
+  },
+  {
+    "id": "oddone",
+    "title": "Odd One Out",
+    "rule": "Tap the tile that is a slightly different shade. It gets harder each level"
+  },
+  {
+    "id": "oldmaid",
+    "title": "Old Maid",
+    "rule": "Match pairs — don\\u2019t hold the odd queen"
+  },
+  {
+    "id": "pacman",
+    "title": "Pac-Kiwi",
+    "rule": "Arrow keys. Eat the dots, dodge ghosts — grab a power-pellet to chase them"
+  },
+  {
+    "id": "pig",
+    "title": "Pig (Dice)",
+    "rule": "Roll to build points, but a 1 wipes your turn. Hold to bank. First to 50 wins"
+  },
+  {
+    "id": "pipes",
+    "title": "Pipes",
+    "rule": "Rotate tiles to connect the source to the drain"
+  },
+  {
+    "id": "pong",
+    "title": "Pong",
+    "rule": "First to 3 beats the CPU. Mouse or ↑↓ to move"
+  },
+  {
+    "id": "reaction",
+    "title": "Reaction Test",
+    "rule": "Click the instant it turns green — five rounds"
+  },
+  {
+    "id": "reversi",
+    "title": "Reversi",
+    "rule": "Flank the CPU’s discs — most discs when the board fills wins"
+  },
+  {
+    "id": "rhythmtaps",
+    "title": "Rhythm Taps",
+    "rule": "Hit D F J K in time with the falling notes — 45 seconds"
+  },
+  {
+    "id": "rps",
+    "title": "Rock Paper Scissors",
+    "rule": "Best of 5 against the computer"
+  },
+  {
+    "id": "rummy500",
+    "title": "Rummy 500",
+    "rule": "Meld sets &amp; runs, lay off, race to 500"
+  },
+  {
+    "id": "simon",
+    "title": "Simon",
+    "rule": "Watch the sequence, then repeat it — reach round"
+  },
+  {
+    "id": "skipbo",
+    "title": "Skip-Bo",
+    "rule": "Empty your stock first — feed the 1→12 piles"
+  },
+  {
+    "id": "snake",
+    "title": "Snake",
+    "rule": "Arrow keys. Eat 10 apples — keep going for more"
+  },
+  {
+    "id": "snap",
+    "title": "Snap",
+    "rule": "Hit SNAP the instant two card ranks match — beat the CPU"
+  },
+  {
+    "id": "sokoban",
+    "title": "Sokoban",
+    "rule": "Arrow keys — push every box onto a ringed target. You can push but not pull"
+  },
+  {
+    "id": "solitaire",
+    "title": "Solitaire",
+    "rule": "Klondike. Build A→K by suit. Tap a card, then its spot"
+  },
+  {
+    "id": "invaders",
+    "title": "Space Invaders",
+    "rule": "Arrows to move · Space to fire · clear the wave"
+  },
+  {
+    "id": "spades",
+    "title": "Spades",
+    "rule": "Bid your tricks, then take them — spades are trump"
+  },
+  {
+    "id": "speed",
+    "title": "Speed",
+    "rule": "Shed every card onto the piles — one rank up or down. Real-time vs CPU"
+  },
+  {
+    "id": "starblaster",
+    "title": "Star Blaster",
+    "rule": "Arrows move · Space fires · Clear the swarm"
+  },
+  {
+    "id": "sumo",
+    "title": "Sumo Kiwis",
+    "rule": "Shove your rival off — best of 5 (2 players)"
+  },
+  {
+    "id": "tankduel",
+    "title": "Tank Duel",
+    "rule": "Two-player battle — first to 5 hits wins"
+  },
+  {
+    "id": "poker",
+    "title": "Texas Hold'em",
+    "rule": "Hole cards, flop, turn, river — best hand vs 3 CPUs takes the pot"
+  },
+  {
+    "id": "tictactoe",
+    "title": "Tic-Tac-Toe",
+    "rule": "You are X — beat the computer"
+  },
+  {
+    "id": "towerstack",
+    "title": "Tower Stack",
+    "rule": "Tap/Space to drop · align the blocks"
+  },
+  {
+    "id": "tripeak",
+    "title": "Tri-Peaks Solitaire",
+    "rule": "Clear the pyramid — take any exposed card one rank above or below the base (A wraps to K). Draw a new base from the stock when stuck"
+  },
+  {
+    "id": "twokiwis",
+    "title": "Two Kiwis",
+    "rule": "Co-op! Both kiwis reach their exits together"
+  },
+  {
+    "id": "typing",
+    "title": "Typing Test",
+    "rule": "Type the sentence as fast and accurately as you can"
+  },
+  {
+    "id": "war",
+    "title": "War",
+    "rule": "Flip a card each round — higher card wins. Best of 9"
+  },
+  {
+    "id": "whack",
+    "title": "Whack-a-Mole",
+    "rule": "Tap moles, dodge bombs — score 12 in 30s"
+  },
+  {
+    "id": "wordle",
+    "title": "Word Break",
+    "rule": ""
+  },
+  {
+    "id": "ladder",
+    "title": "Word Ladder",
+    "rule": "Change one letter at a time (real words only) to reach the target"
+  },
+  {
+    "id": "gridseek",
+    "title": "Word Search",
+    "rule": "Find all 8 hidden words in the 10x10 grid"
+  }
+]

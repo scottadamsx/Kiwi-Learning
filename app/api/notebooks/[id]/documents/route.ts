@@ -3,6 +3,9 @@ import { getDb } from "@/lib/db";
 import { ingestDocument } from "@/lib/ingest";
 import { invalidateIndex } from "@/lib/retrieval";
 
+// Image transcription can take a while; allow the full window.
+export const maxDuration = 300;
+
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const db = getDb();
@@ -15,12 +18,23 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ error: "No files provided" }, { status: 400 });
   }
 
-  const results: { filename: string; ok: boolean; error?: string; chunks?: number }[] = [];
+  const results: {
+    filename: string;
+    ok: boolean;
+    error?: string;
+    chunks?: number;
+    via?: string;
+  }[] = [];
   for (const file of files) {
     try {
       const buf = Buffer.from(await file.arrayBuffer());
-      const { chunkCount } = await ingestDocument(id, file.name, file.type || "text/plain", buf);
-      results.push({ filename: file.name, ok: true, chunks: chunkCount });
+      const { chunkCount, via } = await ingestDocument(
+        id,
+        file.name,
+        file.type || "application/octet-stream",
+        buf
+      );
+      results.push({ filename: file.name, ok: true, chunks: chunkCount, via });
     } catch (err) {
       results.push({
         filename: file.name,

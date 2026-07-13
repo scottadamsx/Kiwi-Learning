@@ -56,6 +56,12 @@ interface VaultNote {
 
 function listVaultFiles(root: string): string[] {
   const out: string[] = [];
+  let realRoot: string;
+  try {
+    realRoot = fs.realpathSync(root);
+  } catch {
+    return out;
+  }
   const walk = (dir: string) => {
     if (out.length >= MAX_FILES) return;
     let entries: fs.Dirent[];
@@ -75,7 +81,7 @@ function listVaultFiles(root: string): string[] {
       } catch {
         continue;
       }
-      if (!real.startsWith(fs.realpathSync(root))) continue;
+      if (!real.startsWith(realRoot)) continue;
       if (e.isDirectory()) walk(full);
       else if (/\.(md|markdown|txt)$/i.test(e.name)) out.push(full);
     }

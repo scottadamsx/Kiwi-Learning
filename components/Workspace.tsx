@@ -17,6 +17,7 @@ import ReviewPanel from "./ReviewPanel";
 import QuizPanel from "./QuizPanel";
 import ChatPanel from "./ChatPanel";
 import MapPanel from "./MapPanel";
+import AssignmentsPanel from "./AssignmentsPanel";
 
 export interface NotebookDetail {
   notebook: Notebook;
@@ -27,7 +28,7 @@ export interface NotebookDetail {
   lesson_section_ids: string[];
 }
 
-const TABS = ["Overview", "Learn", "Review", "Quiz", "Chat", "Map", "Sources"] as const;
+const TABS = ["Overview", "Learn", "Review", "Quiz", "Assignments", "Chat", "Map", "Sources"] as const;
 export type Tab = (typeof TABS)[number];
 
 export default function Workspace({ notebookId }: { notebookId: string }) {
@@ -143,11 +144,14 @@ export default function Workspace({ notebookId }: { notebookId: string }) {
         {tab === "Overview" && (
           <OverviewPanel detail={detail} readiness={readiness} onNavigate={setTab} />
         )}
-        {tab === "Learn" && <LearnPanel detail={detail} readiness={readiness} />}
+        {tab === "Learn" && (
+          <LearnPanel detail={detail} readiness={readiness} onChanged={refresh} />
+        )}
         {tab === "Review" && (
           <ReviewPanel notebookId={notebookId} onSessionEnd={refresh} />
         )}
         {tab === "Quiz" && <QuizPanel notebookId={notebookId} onGraded={refresh} />}
+        {tab === "Assignments" && <AssignmentsPanel notebookId={notebookId} />}
         {tab === "Chat" && <ChatPanel notebookId={notebookId} />}
         {tab === "Map" && <MapPanel detail={detail} readiness={readiness} />}
         {tab === "Sources" && <SourcesPanel detail={detail} onChanged={refresh} />}

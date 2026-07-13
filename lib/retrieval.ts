@@ -74,7 +74,10 @@ export function chunksForSection(notebookId: string, sectionId: string, limit = 
   return searchChunks(notebookId, `${section.name} ${section.description}`, limit);
 }
 
-export function formatSources(chunks: Chunk[]): {
+export function formatSources(
+  chunks: Chunk[],
+  clip = 1800 // token efficiency: full 2.4k chunks × 8 per question adds up fast
+): {
   block: string;
   sources: { n: number; chunk_id: string; document: string; excerpt: string }[];
 } {
@@ -90,7 +93,10 @@ export function formatSources(chunks: Chunk[]): {
     };
   });
   const block = chunks
-    .map((c, i) => `<source n="${i + 1}" document="${sources[i].document}">\n${c.text}\n</source>`)
+    .map(
+      (c, i) =>
+        `<source n="${i + 1}" document="${sources[i].document}">\n${c.text.slice(0, clip)}\n</source>`
+    )
     .join("\n\n");
   return { block, sources };
 }

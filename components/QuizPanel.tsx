@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { GradeResult } from "@/lib/types";
 import Markdown from "./Markdown";
+import KiwiGame from "./KiwiGame";
 
 interface QuizViewItem {
   id: string;
@@ -104,6 +105,7 @@ export default function QuizPanel({
 
   if (!items) {
     return (
+      <div className="space-y-6">
       <div className="mx-auto max-w-md rounded-2xl border border-line bg-white p-10 text-center">
         <p className="text-3xl">✍️</p>
         <h2 className="font-display mt-2 text-xl font-semibold">Adaptive quiz</h2>
@@ -119,6 +121,8 @@ export default function QuizPanel({
         >
           {generating ? <span className="animate-kiwi-pulse">Writing your quiz…</span> : "Start a quiz"}
         </button>
+      </div>
+      {generating && <KiwiGame />}
       </div>
     );
   }
